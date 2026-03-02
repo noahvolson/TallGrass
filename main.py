@@ -7,38 +7,67 @@ import requests
 
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from numpy.core.defchararray import capitalize
 
+# Init environment variables
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 pokemon_count = int(os.getenv('POKEMON_COUNT'))
 poke_api_url = os.getenv('POKE_API_URL')
+log_level = int(os.getenv('LOG_LEVEL'))
+# TODO warn if any are not set
+
+# Init logging to discord.log
+logger = logging.getLogger('TallGrass')
+logger.setLevel(log_level)
 
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+# Extend commands.Bot to schedule Pokémon spawning
+class TallGrass(commands.Bot):
+    channel = None
+
+    async def spawn_pokemon(self):
+        pokemon_id = random.randint(1, pokemon_count)
+        response = requests.get(poke_api_url + '/pokemon/' + str(pokemon_id))
+        response.raise_for_status()
+
+        data = response.json()
+
+        # TODO add some error handling here
+        sprite_url = data['sprites']['other']['official-artwork']['front_default']
+        name = str.capitalize(data['name'])
+
+        embed = discord.Embed(title=f'Wild {name} appears!')
+        embed.set_image(url=sprite_url)
+
+        logger.info(f'Spawning {name} in channel: {self.channel.name}')
+        await self.channel.send(embed=embed)
+
+    async def setup_hook(self):
+        self.spawner_task.start()
+
+    @tasks.loop(seconds=5)
+    async def spawner_task(self):
+        # TODO use self.spawner_task.change_interval(seconds=<RANDOM_INTERVAL_HERE>)
+
+        if not self.channel:
+            return
+
+        await self.spawn_pokemon()
+
+
+# Init TallGrass bot, enable commands
 intents = discord.Intents.default()
 intents.message_content = True
-
-# class TallGrass(commands.Bot):
-#     async def setup_hook(self):
-#         #TODO start background task
-#         pass
-#
-#     # https://stackoverflow.com/questions/67245314/randomize-time-for-looping-task-in-discord
-#     @tasks.loop(minutes=1)
-#     async def spawn_pokemon(self):
-#         print("Spawning a Pokemon")
-#
-#         if test.current_loop % 2 == 0:
-#             test.change_interval(minutes=3)
-#         else:
-#             test.change_interval(minutes=1)
-
-
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = TallGrass(command_prefix='!', intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user.name} started!")
+    logger.info(f'{bot.user.name} is now online')
 
 @bot.event
 async def on_message(message):
@@ -47,25 +76,25 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# Define bot commands
 @bot.command()
-async def hello(ctx):
-    await ctx.send(f"Hello {ctx.author.mention}!")
+async def start(ctx):
+    if ctx.message.author.guild_permissions.administrator:
+        bot.channel = ctx.channel
+        logger.info(f'{ctx.message.author.display_name} activated spawning in channel: {ctx.channel.name}')
+
+# Define bot commands
+@bot.command()
+async def stop(ctx):
+    if ctx.message.author.guild_permissions.administrator:
+        bot.channel = None
+        logger.info(f'{ctx.message.author.display_name} deactivated spawning in channel: {ctx.channel.name}')
 
 @bot.command()
 async def catch(ctx):
-    pokemon_id = random.randint(1, pokemon_count)
-    response = requests.get(poke_api_url + '/pokemon/' + str(pokemon_id))
-    response.raise_for_status()
+    #TODO
+    print("Implement me!")
+    pass
 
-    data = response.json()
-
-    # Navigate to sprites -> other -> official-artwork -> front_default
-    sprite_url = data["sprites"]["other"]["official-artwork"]["front_default"]
-    name = capitalize(data["name"])
-
-    embed = discord.Embed(title=f"Wild {name} appears!")
-    embed.set_image(url=sprite_url)
-    await ctx.send(embed=embed)
-
-bot.run(token, log_handler=handler, log_level=logging.DEBUG)
-print("After run")
+# Now we're ready to spin up the bot!
+bot.run(token, log_handler=handler, log_level=log_level)
