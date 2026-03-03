@@ -7,6 +7,7 @@ import time
 
 import discord
 import requests
+from discord import NotFound
 
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
@@ -42,8 +43,11 @@ spawned_pokemon_catch_percent = 0
 
 class CatchView(discord.ui.View):
 
-    # user_id -> (last_click_time, last_message)
-    cooldowns = {}
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # user_id -> (last_click_time, last_message)
+        self.cooldowns = {}
 
     @discord.ui.button(label='Throw a Poké Ball!', style=discord.ButtonStyle.primary)
     async def button_callback(
@@ -64,7 +68,11 @@ class CatchView(discord.ui.View):
             await interaction.response.defer()  # Acknowledge the interaction without sending a new message
             return
         elif last_msg:
-            await last_msg.delete()
+            try:
+                await last_msg.delete()
+            except NotFound:
+                logger.warning(f"Last message already deleted: {last_msg.content!r}")
+                pass
 
         # Attempt to catch
         roll = random.randint(1, 100)
@@ -75,16 +83,17 @@ class CatchView(discord.ui.View):
         if success:
             button.disabled = True
             await interaction.response.edit_message(view=self) # Required to update the view
+            self.cooldowns = {}
             message_string = f'Gotcha! {spawned_pokemon_name} was caught by {interaction.user.display_name}!'
             await interaction.followup.send(message_string)
         else:
             message_string = 'Aww! It appeared to be caught!'
             await interaction.response.send_message(message_string, ephemeral=True)
 
-        sent_msg = await interaction.original_response()  # Get the actual message object
+            sent_msg = await interaction.original_response()  # Get the actual message object
 
-        # Store the time and message object
-        self.cooldowns[user_id] = (now, sent_msg)
+            # Store the time and message object
+            self.cooldowns[user_id] = (now, sent_msg)
 
 # Extend commands.Bot to schedule Pokémon spawning
 class TallGrass(commands.Bot):
