@@ -1,6 +1,8 @@
+import io
 import logging
 import os
 import random
+import subprocess
 
 import discord
 import requests
@@ -31,26 +33,41 @@ class TallGrass(commands.Bot):
     channel = None
 
     async def spawn_pokemon(self):
+
+        # Retrieve url and name info for a random Pokémon from PokeApi
         pokemon_id = random.randint(1, pokemon_count)
         response = requests.get(poke_api_url + '/pokemon/' + str(pokemon_id))
         response.raise_for_status()
-
         data = response.json()
-
-        # TODO add some error handling here
-        sprite_url = data['sprites']['other']['official-artwork']['front_default']
+        sprite_url = data['sprites']['other']['showdown']['front_default']
         name = str.capitalize(data['name'])
 
-        embed = discord.Embed(title=f'Wild {name} appears!')
-        embed.set_image(url=sprite_url)
+        # Download GIF
+        response = requests.get(sprite_url)
+        gif_bytes = response.content
+
+        # Upscale with gifsicle
+        process = subprocess.Popen(
+            ["gifsicle", "--no-warnings", "--scale", "2", "--colors", "256"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE
+        )
+        resized_bytes, _ = process.communicate(input=gif_bytes)
+
+        # Wrap bytes in BytesIO so discord.File can read it
+        resized_file = io.BytesIO(resized_bytes)
+
+        file = discord.File(fp=resized_file, filename="pokemon.gif")
+        embed = discord.Embed(title=f"Wild {name} appears!", color=discord.Color.dark_green())
+        embed.set_image(url="attachment://pokemon.gif")
 
         logger.info(f'Spawning {name} in channel: {self.channel.name}')
-        await self.channel.send(embed=embed)
+        await self.channel.send(embed=embed, file=file)
 
     async def setup_hook(self):
         self.spawner_task.start()
 
-    @tasks.loop(seconds=5)
+    @tasks.loop(seconds=10)
     async def spawner_task(self):
         # TODO use self.spawner_task.change_interval(seconds=<RANDOM_INTERVAL_HERE>)
 
@@ -59,8 +76,7 @@ class TallGrass(commands.Bot):
 
         await self.spawn_pokemon()
 
-
-# Init TallGrass bot, enable commands
+# Init TallGrass bot
 intents = discord.Intents.default()
 intents.message_content = True
 bot = TallGrass(command_prefix='!', intents=intents)
@@ -69,6 +85,7 @@ bot = TallGrass(command_prefix='!', intents=intents)
 async def on_ready():
     logger.info(f'{bot.user.name} is now online')
 
+# Enable command parsing
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
