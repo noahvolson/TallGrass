@@ -13,11 +13,15 @@ from dotenv import load_dotenv
 
 # Init environment variables
 load_dotenv()
-token = os.getenv('DISCORD_TOKEN')
-pokemon_count = int(os.getenv('POKEMON_COUNT'))
-poke_api_url = os.getenv('POKE_API_URL')
-log_level = int(os.getenv('LOG_LEVEL'))
-catch_cooldown_sec = int(os.getenv('CATCH_COOLDOWN_SEC'))
+token                       = os.getenv('DISCORD_TOKEN')
+poke_api_url                = os.getenv('POKE_API_URL')
+pokemon_count               = int(os.getenv('POKEMON_COUNT'))
+log_level                   = int(os.getenv('LOG_LEVEL'))
+catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SEC'))
+rare_chance_percent         = int(os.getenv('RARE_CHANCE_PERCENT'))
+shiny_chance_percent        = int(os.getenv('SHINY_CHANCE_PERCENT'))
+regular_chance_percent      = int(os.getenv('REGULAR_CHANCE_PERCENT'))
+shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
 
 # TODO warn if any are not set
 
@@ -31,20 +35,23 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-# The ID of a Pokémon available for catching
+# Details of the Pokémon available for catching
 spawned_pokemon_id = -1
+spawned_pokemon_name = ''
+spawned_pokemon_catch_percent = 0
 
 class CatchView(discord.ui.View):
 
     # user_id -> (last_click_time, last_message)
     cooldowns = {}
 
-    @discord.ui.button(label="Throw a Poké Ball!", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='Throw a Poké Ball!', style=discord.ButtonStyle.primary)
     async def button_callback(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+        # TODO use a lock to prevent race condition
         user_id = interaction.user.id
         now = time.monotonic()
 
@@ -53,14 +60,27 @@ class CatchView(discord.ui.View):
 
         if remaining > 0 and last_msg:
             # Edit the previous message instead of sending a new one
-            await last_msg.edit(content=f"⏳ Slow down! Try again in {remaining:.1f}s.")
+            await last_msg.edit(content=f'⏳ Slow down! Try again in {remaining:.1f}s.')
             await interaction.response.defer()  # Acknowledge the interaction without sending a new message
             return
         elif last_msg:
             await last_msg.delete()
 
-        # Send a new message
-        msg = await interaction.response.send_message("Button clicked!", ephemeral=True)
+        # Attempt to catch
+        roll = random.randint(1, 100)
+        success = roll <= spawned_pokemon_catch_percent
+        logger.debug(f'{interaction.user.display_name} Rolled: {roll}, Required: {spawned_pokemon_catch_percent} or lower')
+
+        # TODO log these events
+        if success:
+            button.disabled = True
+            await interaction.response.edit_message(view=self) # Required to update the view
+            message_string = f'Gotcha! {spawned_pokemon_name} was caught by {interaction.user.display_name}!'
+            await interaction.followup.send(message_string)
+        else:
+            message_string = 'Aww! It appeared to be caught!'
+            await interaction.response.send_message(message_string, ephemeral=True)
+
         sent_msg = await interaction.original_response()  # Get the actual message object
 
         # Store the time and message object
@@ -71,14 +91,31 @@ class TallGrass(commands.Bot):
     channel = None
 
     async def spawn_pokemon(self):
+        global spawned_pokemon_name
+        global spawned_pokemon_id
+
+        # Roll for shiny
+        is_shiny = random.randint(1, shiny_spawn_one_in) == 1
 
         # Retrieve url and name info for a random Pokémon from PokeApi
-        pokemon_id = random.randint(1, pokemon_count)
-        response = requests.get(poke_api_url + '/pokemon/' + str(pokemon_id))
+        spawned_pokemon_id = random.randint(1, pokemon_count)
+        response = requests.get(poke_api_url + '/pokemon/' + str(spawned_pokemon_id))
         response.raise_for_status()
         data = response.json()
         sprite_url = data['sprites']['other']['showdown']['front_default']
-        name = str.capitalize(data['name'])
+        spawned_pokemon_name = str.capitalize(data['name'])
+
+        # Determine catch percent from the species endpoint
+        response = requests.get(poke_api_url + '/pokemon-species/' + str(spawned_pokemon_id))
+        data = response.json()
+
+        global spawned_pokemon_catch_percent
+        if data['is_legendary'] or data['is_mythical']:
+            spawned_pokemon_catch_percent = rare_chance_percent
+        elif is_shiny:
+            spawned_pokemon_catch_percent = shiny_chance_percent
+        else:
+            spawned_pokemon_catch_percent = regular_chance_percent
 
         # Download GIF
         response = requests.get(sprite_url)
@@ -86,7 +123,7 @@ class TallGrass(commands.Bot):
 
         # Upscale with gifsicle
         process = subprocess.Popen(
-            ["gifsicle", "--no-warnings", "--scale", "2", "--colors", "256"],
+            ['gifsicle', '--no-warnings', '--scale', '2', '--colors', '256'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE
         )
@@ -95,14 +132,14 @@ class TallGrass(commands.Bot):
         # Wrap bytes in BytesIO so discord.File can read it
         resized_file = io.BytesIO(resized_bytes)
 
-        file = discord.File(fp=resized_file, filename="pokemon.gif")
-        embed = discord.Embed(title=f"Wild {name} appears!", color=discord.Color.dark_green())
-        embed.set_image(url="attachment://pokemon.gif")
+        file = discord.File(fp=resized_file, filename='pokemon.gif')
+        embed = discord.Embed(title=f'Wild {spawned_pokemon_name} appears!', color=discord.Color.dark_green())
+        embed.set_image(url='attachment://pokemon.gif')
 
         # Add catch button
         view = CatchView()
 
-        logger.info(f'Spawning {name} in channel: {self.channel.name}')
+        logger.info(f'Spawning {spawned_pokemon_name} in channel: {self.channel.name}')
         await self.channel.send(embed=embed, file=file, view=view)
 
     async def setup_hook(self):
@@ -151,7 +188,7 @@ async def stop(ctx):
 @bot.command()
 async def catch(ctx):
     #TODO
-    print("Implement me!")
+    print('Implement me!')
     pass
 
 # Now we're ready to spin up the bot!
