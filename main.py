@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import os
@@ -46,8 +47,9 @@ class CatchView(discord.ui.View):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # user_id -> (last_click_time, last_message)
-        self.cooldowns = {}
+        self.cooldowns = {} # user_id -> (last_click_time, last_message)
+        self.claimed = False
+        self.claim_lock = asyncio.Lock()
 
     @discord.ui.button(label='Throw a Poké Ball!', style=discord.ButtonStyle.primary)
     async def button_callback(
@@ -55,45 +57,50 @@ class CatchView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
-        # TODO use a lock to prevent race condition
-        user_id = interaction.user.id
-        now = time.monotonic()
+        async with self.claim_lock:
+            if self.claimed:
+                await interaction.response.send_message(f"Too slow! {spawned_pokemon_name} already caught.", ephemeral=True)
+                return
 
-        last_click, last_msg = self.cooldowns.get(user_id, (0, None))
-        remaining = catch_cooldown_sec - (now - last_click)
+            user_id = interaction.user.id
+            now = time.monotonic()
 
-        if remaining > 0 and last_msg:
-            # Edit the previous message instead of sending a new one
-            await last_msg.edit(content=f'⏳ Slow down! Try again in {remaining:.1f}s.')
-            await interaction.response.defer()  # Acknowledge the interaction without sending a new message
-            return
-        elif last_msg:
-            try:
-                await last_msg.delete()
-            except NotFound:
-                logger.warning(f"Last message already deleted: {last_msg.content!r}")
-                pass
+            last_click, last_msg = self.cooldowns.get(user_id, (0, None))
+            remaining = catch_cooldown_sec - (now - last_click)
 
-        # Attempt to catch
-        roll = random.randint(1, 100)
-        success = roll <= spawned_pokemon_catch_percent
-        logger.debug(f'{interaction.user.display_name} Rolled: {roll}, Required: {spawned_pokemon_catch_percent} or lower')
+            if remaining > 0 and last_msg:
+                # Edit the previous message instead of sending a new one
+                await last_msg.edit(content=f'⏳ Slow down! Try again in {remaining:.1f}s.')
+                await interaction.response.defer()  # Acknowledge the interaction without sending a new message
+                return
+            elif last_msg:
+                try:
+                    await last_msg.delete()
+                except NotFound:
+                    logger.warning(f"Last message already deleted: {last_msg.content!r}")
+                    pass
 
-        # TODO log these events
-        if success:
-            button.disabled = True
-            await interaction.response.edit_message(view=self) # Required to update the view
-            self.cooldowns = {}
-            message_string = f'Gotcha! {spawned_pokemon_name} was caught by {interaction.user.display_name}!'
-            await interaction.followup.send(message_string)
-        else:
-            message_string = 'Aww! It appeared to be caught!'
-            await interaction.response.send_message(message_string, ephemeral=True)
+            # Attempt to catch
+            roll = random.randint(1, 100)
+            success = roll <= spawned_pokemon_catch_percent
+            logger.debug(f'{interaction.user.display_name} Rolled: {roll}, Required: {spawned_pokemon_catch_percent} or lower')
 
-            sent_msg = await interaction.original_response()  # Get the actual message object
+            # TODO log these events
+            if success:
+                self.claimed = True
+                button.disabled = True
+                await interaction.response.edit_message(view=self) # Required to update the view
+                self.cooldowns = {}
+                message_string = f'Gotcha! {spawned_pokemon_name} was caught by {interaction.user.display_name}!'
+                await interaction.followup.send(message_string)
+            else:
+                message_string = 'Aww! It appeared to be caught!'
+                await interaction.response.send_message(message_string, ephemeral=True)
 
-            # Store the time and message object
-            self.cooldowns[user_id] = (now, sent_msg)
+                sent_msg = await interaction.original_response()  # Get the actual message object
+
+                # Store the time and message object
+                self.cooldowns[user_id] = (now, sent_msg)
 
 # Extend commands.Bot to schedule Pokémon spawning
 class TallGrass(commands.Bot):
