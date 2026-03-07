@@ -80,7 +80,8 @@ class TallGrass(commands.Bot):
         resized_file = io.BytesIO(resized_bytes)
 
         file = discord.File(fp=resized_file, filename='pokemon.gif')
-        embed = discord.Embed(title=f'Wild {spawned_pokemon_name} appears!', color=discord.Color.dark_green())
+        shiny_emoji = ' :sparkles: ' if is_shiny else ''
+        embed = discord.Embed(title=f'Wild {shiny_emoji}{spawned_pokemon_name}{shiny_emoji} appears!', color=discord.Color.dark_green())
         embed.set_image(url='attachment://pokemon.gif')
 
         view = catch_view.CatchView(
@@ -93,9 +94,6 @@ class TallGrass(commands.Bot):
 
         logger.info(f'Spawning {spawned_pokemon_name} in channel: {self.channel.name}')
         await self.channel.send(embed=embed, file=file, view=view)
-
-    async def setup_hook(self):
-        self.spawner_task.start()
 
     @tasks.loop(seconds=10)
     async def spawner_task(self):
@@ -138,6 +136,7 @@ async def init(ctx):
 async def start(ctx):
     if ctx.message.author.guild_permissions.administrator:
         bot.channel = ctx.channel
+        bot.spawner_task.start()
         logger.info(f'{ctx.message.author.display_name} activated spawning in channel: {ctx.channel.name}')
 
 # Define bot commands
@@ -145,6 +144,7 @@ async def start(ctx):
 async def stop(ctx):
     if ctx.message.author.guild_permissions.administrator:
         bot.channel = None
+        bot.spawner_task.stop()
         logger.info(f'{ctx.message.author.display_name} deactivated spawning in channel: {ctx.channel.name}')
 
 @bot.command()
