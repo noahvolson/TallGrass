@@ -7,11 +7,13 @@ import time
 
 import discord
 
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
 log_level                   = int(os.getenv('LOG_LEVEL'))
-catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SEC'))
+catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SECONDS'))
+catch_window_sec            = int(os.getenv('CATCH_WINDOW_SECONDS'))
 
 # Init logging to discord.log
 logger = logging.getLogger('TallGrass')
@@ -25,8 +27,9 @@ logger.addHandler(handler)
 
 class CatchView(discord.ui.View):
 
-    def __init__(self, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, sprite_url, is_shiny, *args, **kwargs):
+    def __init__(self, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, sprite_url, is_shiny):
 
+        self.message = None # Set after sending the view
         self.cooldowns = {} # user_id -> (last_click_time, last_message)
         self.claimed = False
         self.claim_lock = asyncio.Lock()
@@ -38,7 +41,26 @@ class CatchView(discord.ui.View):
         self.sprite_url = sprite_url
         self.is_shiny = is_shiny
 
-        super().__init__(*args, **kwargs)
+        self.flee_time = datetime.now() + timedelta(seconds=catch_window_sec)
+        self._flee_task = asyncio.create_task(self._flee())
+
+        super().__init__(timeout=None)
+
+    async def _flee(self):
+        delay = (self.flee_time - datetime.now()).total_seconds()
+        await asyncio.sleep(max(delay, 0))
+
+        if self.claimed:
+            return
+
+        for item in self.children:
+            item.disabled = True
+
+        if self.message:
+            await self.message.edit(view=self)
+            await self.message.reply(f'Wild {self.spawned_pokemon_name} fled!')
+
+        self.stop()
 
     @discord.ui.button(label='Throw a Poké Ball!', style=discord.ButtonStyle.primary)
     async def button_callback(
@@ -47,8 +69,8 @@ class CatchView(discord.ui.View):
         button: discord.ui.Button
     ):
         async with self.claim_lock:
-            if self.claimed:
-                await interaction.response.send_message(f'Too slow! {self.spawned_pokemon_name} already caught.', ephemeral=True)
+            if datetime.now() >= self.flee_time or self.claimed:
+                await interaction.response.send_message(f'Too slow!', ephemeral=True)
                 return
 
             user_id = interaction.user.id

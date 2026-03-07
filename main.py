@@ -23,6 +23,8 @@ rare_chance_percent         = int(os.getenv('RARE_CHANCE_PERCENT'))
 shiny_chance_percent        = int(os.getenv('SHINY_CHANCE_PERCENT'))
 regular_chance_percent      = int(os.getenv('REGULAR_CHANCE_PERCENT'))
 shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
+min_minutes_to_spawn        = int(os.getenv('MIN_MINUTES_TO_SPAWN'))
+max_minutes_to_spawn        = int(os.getenv('MAX_MINUTES_TO_SPAWN'))
 
 # TODO warn if any are not set
 
@@ -93,9 +95,10 @@ class TallGrass(commands.Bot):
         )
 
         logger.info(f'Spawning {spawned_pokemon_name} in channel: {self.channel.name}')
-        await self.channel.send(embed=embed, file=file, view=view)
+        message = await self.channel.send(embed=embed, file=file, view=view)
+        view.message = message
 
-    @tasks.loop(seconds=10)
+    @tasks.loop(seconds=1) # Placeholder. Interval set in start()
     async def spawner_task(self):
         # TODO use self.spawner_task.change_interval(seconds=<RANDOM_INTERVAL_HERE>)
 
@@ -136,6 +139,7 @@ async def init(ctx):
 async def start(ctx):
     if ctx.message.author.guild_permissions.administrator:
         bot.channel = ctx.channel
+        bot.spawner_task.change_interval(seconds=random.randint(min_minutes_to_spawn, max_minutes_to_spawn)) # TODO Swap to minutes
         bot.spawner_task.start()
         logger.info(f'{ctx.message.author.display_name} activated spawning in channel: {ctx.channel.name}')
 
@@ -146,11 +150,6 @@ async def stop(ctx):
         bot.channel = None
         bot.spawner_task.stop()
         logger.info(f'{ctx.message.author.display_name} deactivated spawning in channel: {ctx.channel.name}')
-
-@bot.command()
-async def channel(ctx):
-    await ctx.send(f'Channel ID: {ctx.channel.id}')
-    pass
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
