@@ -6,9 +6,11 @@
 import aiohttp
 import asyncio
 import base64
+import io
 import os
 
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 APPLICATION_ID  = os.getenv("APPLICATION_ID")
@@ -21,11 +23,21 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
+def trim_transparent(image_data: bytes) -> bytes:
+    img = Image.open(io.BytesIO(image_data)).convert("RGBA")
+    bbox = img.getbbox()  # returns (left, top, right, bottom) of non-transparent area
+    if bbox:
+        img = img.crop(bbox)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 async def upload_emoji(session, name: str, image_url: str):
     # Fetch the sprite
     async with session.get(image_url) as resp:
         image_data = await resp.read()
+
+    image_data = trim_transparent(image_data)  # crop before encoding
 
     # Discord requires base64 encoded image
     b64 = base64.b64encode(image_data).decode("utf-8")

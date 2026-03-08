@@ -16,7 +16,7 @@ catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SECONDS'))
 catch_window_sec            = int(os.getenv('CATCH_WINDOW_SECONDS'))
 
 # Init logging to discord.log
-logger = logging.getLogger('TallGrass')
+logger = logging.getLogger('CatchView')
 logger.setLevel(log_level)
 
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')

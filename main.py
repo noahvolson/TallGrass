@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import random
@@ -26,7 +27,9 @@ shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
 min_minutes_to_spawn        = int(os.getenv('MIN_MINUTES_TO_SPAWN'))
 max_minutes_to_spawn        = int(os.getenv('MAX_MINUTES_TO_SPAWN'))
 
-# TODO warn if any are not set
+#
+with open("emoji_map.json", "r") as f:
+    emoji_map = json.load(f)
 
 # Init logging to discord.log
 logger = logging.getLogger('TallGrass')
@@ -150,6 +153,31 @@ async def stop(ctx):
         bot.channel = None
         bot.spawner_task.stop()
         logger.info(f'{ctx.message.author.display_name} deactivated spawning in channel: {ctx.channel.name}')
+
+# Helper for box()
+def get_emoji(national_dex_number: int, is_shiny: bool) -> str:
+    key = str(national_dex_number) + ("_shiny" if is_shiny else "")
+    emoji_id = emoji_map.get(key)
+
+    if emoji_id is None:
+        raise KeyError(f"No emoji found for Pokémon #{national_dex_number}{' (shiny)' if is_shiny else ''}")
+
+    return f"<:pokemon_{key}:{emoji_id}>"
+
+@bot.command()
+async def box(ctx):
+    pokemon_list = await database.get_all_user_pokemon(ctx.message.author.id)
+    emojis = [get_emoji(p["national_dex_number"], p["is_shiny"]) for p in pokemon_list]
+    rows = [emojis[i:i+6] for i in range(0, len(emojis), 6)]
+    embed = discord.Embed(
+        title=f"{ctx.author.display_name}'s Box",
+        description="\n\n".join("\u2000\u2000".join(row) for row in rows),
+        color=discord.Color.blurple()
+    )
+    embed.set_thumbnail(url=ctx.author.display_avatar.url)
+
+    await ctx.send(embed=embed)
+
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
