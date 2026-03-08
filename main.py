@@ -171,7 +171,7 @@ async def box(ctx):
     rows = [emojis[i:i+6] for i in range(0, len(emojis), 6)]
     embed = discord.Embed(
         title=f"{ctx.author.display_name}'s Box",
-        description="\n\n".join("\u2000\u2000".join(row) for row in rows),
+        description="\n\n".join("# " + "\u2000\u2000".join(row) for row in rows),
         color=discord.Color.blurple()
     )
     embed.set_thumbnail(url=ctx.author.display_avatar.url)
