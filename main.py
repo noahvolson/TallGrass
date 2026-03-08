@@ -27,8 +27,8 @@ shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
 min_minutes_to_spawn        = int(os.getenv('MIN_MINUTES_TO_SPAWN'))
 max_minutes_to_spawn        = int(os.getenv('MAX_MINUTES_TO_SPAWN'))
 
-#
-with open("emoji_map.json", "r") as f:
+# Map of emoji_name -> emoji_id used to display a user's box
+with open("emoji_upload/emoji_map.json", "r") as f:
     emoji_map = json.load(f)
 
 # Init logging to discord.log
@@ -155,19 +155,19 @@ async def stop(ctx):
         logger.info(f'{ctx.message.author.display_name} deactivated spawning in channel: {ctx.channel.name}')
 
 # Helper for box()
-def get_emoji(national_dex_number: int, is_shiny: bool) -> str:
-    key = str(national_dex_number) + ("_shiny" if is_shiny else "")
+def get_emoji(national_dex_number: int, is_shiny: bool, name: str) -> str:
+    key = 'pokemon_' + str(national_dex_number) + ("_shiny" if is_shiny else "")
     emoji_id = emoji_map.get(key)
 
     if emoji_id is None:
         raise KeyError(f"No emoji found for Pokémon #{national_dex_number}{' (shiny)' if is_shiny else ''}")
 
-    return f"<:pokemon_{key}:{emoji_id}>"
+    return f"<:{'shiny_' if is_shiny else ''}{name.lower()}_{national_dex_number}:{emoji_id}>"
 
 @bot.command()
 async def box(ctx):
     pokemon_list = await database.get_all_user_pokemon(ctx.message.author.id)
-    emojis = [get_emoji(p["national_dex_number"], p["is_shiny"]) for p in pokemon_list]
+    emojis = [get_emoji(p["national_dex_number"], p["is_shiny"], p['name']) for p in pokemon_list]
     rows = [emojis[i:i+6] for i in range(0, len(emojis), 6)]
     embed = discord.Embed(
         title=f"{ctx.author.display_name}'s Box",
