@@ -115,46 +115,42 @@ class TallGrass(commands.Bot):
 # Init TallGrass bot
 intents = discord.Intents.default()
 intents.message_content = True
-bot = TallGrass(command_prefix='!', intents=intents)
+bot = TallGrass(command_prefix='/', intents=intents)
 
 @bot.event
 async def on_ready():
-    logger.info(f'{bot.user.name} is now online')
-
-# Enable command parsing
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return
-
-    await bot.process_commands(message)
+    synced = await bot.tree.sync()
+    logger.info(f'{bot.user.name} is now online with {len(synced)} active commands')
 
 # Define bot commands
-@bot.command()
-async def init(ctx):
-    if ctx.message.author.guild_permissions.administrator:
-        try:
-            await database.init_db()
-        except Exception as e:
-            logger.error(f'Failed to initialize database: {e}')
+@bot.tree.command(name='init', description='Initialize TallGrass')
+@discord.app_commands.default_permissions(administrator=True)
+async def init(interaction: discord.Interaction):
+    try:
+        await database.init_db()
+    except Exception as e:
+        logger.error(f'Failed to initialize database: {e}')
+        interaction.response.send_message('Failed to initialize database. Check log.')
 
-        await ctx.send(f'Tallgrass initialized!')
+    await interaction.response.send_message(f'Tallgrass initialized!')
 
-@bot.command()
-async def start(ctx):
-    if ctx.message.author.guild_permissions.administrator:
-        bot.channel = ctx.channel
-        bot.spawner_task.change_interval(seconds=random.randint(min_minutes_to_spawn, max_minutes_to_spawn)) # TODO Swap to minutes
-        bot.spawner_task.start()
-        logger.info(f'{ctx.message.author.display_name} activated spawning in channel: {ctx.channel.name}')
+@bot.tree.command(name='start', description='Start spawning Pokémon in this channel')
+@discord.app_commands.default_permissions(administrator=True)
+async def start(interaction: discord.Interaction):
+    bot.channel = interaction.channel
+    bot.spawner_task.change_interval(seconds=random.randint(min_minutes_to_spawn, max_minutes_to_spawn)) # TODO Swap to minutes
+    bot.spawner_task.start()
+    logger.info(f'{interaction.user.display_name} activated spawning in channel: {interaction.channel.name}')
+    await interaction.response.send_message(f'Spawning Pokémon in {interaction.channel.name}...')
 
 # Define bot commands
-@bot.command()
-async def stop(ctx):
-    if ctx.message.author.guild_permissions.administrator:
-        bot.channel = None
-        bot.spawner_task.stop()
-        logger.info(f'{ctx.message.author.display_name} deactivated spawning in channel: {ctx.channel.name}')
+@bot.tree.command(name='stop', description='Stop spawning Pokémon in this channel')
+@discord.app_commands.default_permissions(administrator=True)
+async def stop(interaction: discord.Interaction):
+    bot.channel = None
+    bot.spawner_task.stop()
+    logger.info(f'{interaction.user.display_name} deactivated spawning in channel: {interaction.channel.name}')
+    await interaction.response.send_message(f'Spawning deactivated in {interaction.channel.name}')
 
 # Helper for box()
 def get_emoji(national_dex_number: int, is_shiny: bool, name: str) -> str:
@@ -166,19 +162,22 @@ def get_emoji(national_dex_number: int, is_shiny: bool, name: str) -> str:
 
     return f"<:{'shiny_' if is_shiny else ''}{name.lower()}_{national_dex_number}:{emoji_id}>"
 
-@bot.command()
-async def box(ctx):
-    pokemon_list = await database.get_all_user_pokemon(ctx.message.author.id)
+@bot.tree.command(name='box', description='View your pokemon collection')
+async def box(interaction: discord.Interaction, user: discord.Member = None):
+
+    view_user = user if user else interaction.user
+
+    pokemon_list = await database.get_all_user_pokemon(view_user.id)
     emojis = [get_emoji(p['national_dex_number'], p['is_shiny'], p['name']) for p in pokemon_list]
     rows = [emojis[i:i+6] for i in range(0, len(emojis), 6)]
     embed = discord.Embed(
-        title=f"{ctx.author.display_name}'s Box",
+        title=f"{view_user.name}'s Box",
         description='\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows),
         color=discord.Color.blurple()
     )
-    embed.set_thumbnail(url=ctx.author.display_avatar.url)
+    embed.set_thumbnail(url=view_user.display_avatar.url)
 
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 def parse_pokemon(pokemon: str) -> tuple[int, bool]:
     # Parse a pokemon token like 'shiny_bulbasaur_1' or 'ninetales_38'
@@ -187,37 +186,34 @@ def parse_pokemon(pokemon: str) -> tuple[int, bool]:
     dex_num = int(parts[-1])  # last element is always the dex number
     return dex_num, is_shiny
 
-@bot.command()
-async def trade(ctx, offer_token: str, _for: str, want_token: str):
-    if _for.lower() != 'for':
-        await ctx.message.reply('Invalid format. Use: `!trade <pokemon> for <pokemon>`')
-        return
-
+@bot.tree.command(name='trade', description='Post a trade offer')
+async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokemon: str):
+    await interaction.response.defer() # DB checking can take a bit
     try:
-        offer_dex_num, offer_is_shiny = parse_pokemon(offer_token)
-        want_dex_num, want_is_shiny = parse_pokemon(want_token)
+        offer_dex_num, offer_is_shiny = parse_pokemon(offer_pokemon)
+        want_dex_num, want_is_shiny = parse_pokemon(want_pokemon)
     except ValueError as e:
-        await ctx.message.reply(f'Error parsing trade: {e}')
+        await interaction.followup.send(f'Error parsing trade: {e}')
         return
 
-    own_offer = await database.user_has_pokemon(ctx.message.author.id, offer_dex_num, offer_is_shiny)
+    own_offer = await database.user_has_pokemon(interaction.user.id, offer_dex_num, offer_is_shiny)
     if not own_offer:
-        await ctx.message.reply(f'You do not own {offer_token}')
+        await interaction.followup.send(f'You do not own {offer_pokemon}')
         return
 
     offer_shiny_str = ' shiny' if offer_is_shiny else ""
     want_shiny_str = ' shiny' if want_is_shiny else ""
-    await ctx.send(f'Trade{offer_shiny_str} #{offer_dex_num} for{want_shiny_str} #{want_dex_num}')
+    await interaction.followup.send(f'Trade{offer_shiny_str} #{offer_dex_num} for{want_shiny_str} #{want_dex_num}')
     view = trade_view.TradeView(
         log_handler=handler,
-        offer_user_id=ctx.message.author.id,
+        offer_user_id=interaction.user.id,
         offer_dex_num=offer_dex_num,
         offer_is_shiny=offer_is_shiny,
         want_dex_num=want_dex_num,
         want_is_shiny=want_is_shiny
     )
     # TODO Add logging
-    message = await ctx.message.reply(view=view)
+    message = await interaction.followup.send(view=view)
     view.message = message
 
 
