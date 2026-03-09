@@ -114,7 +114,6 @@ class TallGrass(commands.Bot):
 
 # Init TallGrass bot
 intents = discord.Intents.default()
-intents.message_content = True
 bot = TallGrass(command_prefix='/', intents=intents)
 
 @bot.event
