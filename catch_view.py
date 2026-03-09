@@ -19,15 +19,12 @@ catch_window_sec            = int(os.getenv('CATCH_WINDOW_SECONDS'))
 logger = logging.getLogger('CatchView')
 logger.setLevel(log_level)
 
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
-
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
 class CatchView(discord.ui.View):
 
-    def __init__(self, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, sprite_url, is_shiny):
+    def __init__(self, log_handler, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, sprite_url, is_shiny):
+
+        if log_handler:
+            logger.addHandler(log_handler)
 
         self.message = None # Set after sending the view
         self.cooldowns = {} # user_id -> (last_click_time, last_message)
@@ -104,7 +101,6 @@ class CatchView(discord.ui.View):
                     await database.add_user_pokemon(
                         interaction.user.id,
                         self.spawned_pokemon_id,
-                        self.spawned_pokemon_name,
                         self.spawned_pokemon_name,
                         self.sprite_url,
                         self.is_shiny

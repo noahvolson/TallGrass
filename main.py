@@ -7,6 +7,7 @@ import subprocess
 
 import database
 import catch_view
+import trade_view
 
 import discord
 import requests
@@ -28,7 +29,7 @@ min_minutes_to_spawn        = int(os.getenv('MIN_MINUTES_TO_SPAWN'))
 max_minutes_to_spawn        = int(os.getenv('MAX_MINUTES_TO_SPAWN'))
 
 # Map of emoji_name -> emoji_id used to display a user's box
-with open("emoji_upload/emoji_map.json", "r") as f:
+with open('emoji_upload/emoji_map.json', 'r') as f:
     emoji_map = json.load(f)
 
 # Init logging to discord.log
@@ -90,6 +91,7 @@ class TallGrass(commands.Bot):
         embed.set_image(url='attachment://pokemon.gif')
 
         view = catch_view.CatchView(
+            log_handler=handler,
             spawned_pokemon_id=spawned_pokemon_id,
             spawned_pokemon_name=spawned_pokemon_name,
             spawned_pokemon_catch_percent=spawned_pokemon_catch_percent,
@@ -167,16 +169,56 @@ def get_emoji(national_dex_number: int, is_shiny: bool, name: str) -> str:
 @bot.command()
 async def box(ctx):
     pokemon_list = await database.get_all_user_pokemon(ctx.message.author.id)
-    emojis = [get_emoji(p["national_dex_number"], p["is_shiny"], p['name']) for p in pokemon_list]
+    emojis = [get_emoji(p['national_dex_number'], p['is_shiny'], p['name']) for p in pokemon_list]
     rows = [emojis[i:i+6] for i in range(0, len(emojis), 6)]
     embed = discord.Embed(
         title=f"{ctx.author.display_name}'s Box",
-        description="\n\n".join("# " + "\u2000\u2000".join(row) for row in rows),
+        description='\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows),
         color=discord.Color.blurple()
     )
     embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
     await ctx.send(embed=embed)
+
+def parse_pokemon(pokemon: str) -> tuple[int, bool]:
+    # Parse a pokemon token like 'shiny_bulbasaur_1' or 'ninetales_38'
+    parts = pokemon.split('_')
+    is_shiny = parts[0].lower() == 'shiny'
+    dex_num = int(parts[-1])  # last element is always the dex number
+    return dex_num, is_shiny
+
+@bot.command()
+async def trade(ctx, offer_token: str, _for: str, want_token: str):
+    if _for.lower() != 'for':
+        await ctx.message.reply('Invalid format. Use: `!trade <pokemon> for <pokemon>`')
+        return
+
+    try:
+        offer_dex_num, offer_is_shiny = parse_pokemon(offer_token)
+        want_dex_num, want_is_shiny = parse_pokemon(want_token)
+    except ValueError as e:
+        await ctx.message.reply(f'Error parsing trade: {e}')
+        return
+
+    own_offer = await database.user_has_pokemon(ctx.message.author.id, offer_dex_num, offer_is_shiny)
+    if not own_offer:
+        await ctx.message.reply(f'You do not own {offer_token}')
+        return
+
+    offer_shiny_str = ' shiny' if offer_is_shiny else ""
+    want_shiny_str = ' shiny' if want_is_shiny else ""
+    await ctx.send(f'Trade{offer_shiny_str} #{offer_dex_num} for{want_shiny_str} #{want_dex_num}')
+    view = trade_view.TradeView(
+        log_handler=handler,
+        offer_user_id=ctx.message.author.id,
+        offer_dex_num=offer_dex_num,
+        offer_is_shiny=offer_is_shiny,
+        want_dex_num=want_dex_num,
+        want_is_shiny=want_is_shiny
+    )
+    # TODO Add logging
+    message = await ctx.message.reply(view=view)
+    view.message = message
 
 
 # Now we're ready to spin up the bot!
