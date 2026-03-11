@@ -14,6 +14,7 @@ load_dotenv()
 log_level                   = int(os.getenv('LOG_LEVEL'))
 catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SECONDS'))
 catch_window_sec            = int(os.getenv('CATCH_WINDOW_SECONDS'))
+pokeball_emoji_id           = int(os.getenv('POKEBALL_EMOJI_ID'))
 
 # Init logging to discord.log
 logger = logging.getLogger('CatchView')
@@ -42,6 +43,8 @@ class CatchView(discord.ui.View):
         self._flee_task = asyncio.create_task(self._flee())
 
         super().__init__(timeout=None)
+        self.children[0].label = f'Throw a Poké Ball! ({self.spawned_pokemon_catch_percent}%)'
+        self.children[0].emoji = discord.PartialEmoji(name="pokeball", id=pokeball_emoji_id)
 
     async def _flee(self):
         delay = (self.flee_time - datetime.now()).total_seconds()
@@ -59,7 +62,7 @@ class CatchView(discord.ui.View):
 
         self.stop()
 
-    @discord.ui.button(label='Throw a Poké Ball!', style=discord.ButtonStyle.primary)
+    @discord.ui.button(style=discord.ButtonStyle.primary)
     async def button_callback(
         self,
         interaction: discord.Interaction,
