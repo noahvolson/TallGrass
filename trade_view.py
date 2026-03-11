@@ -53,7 +53,7 @@ class TradeView(discord.ui.View):
         await self.end_trade('Expired')
         logger.info(f'{self.offer_user_id} trade expired: OFFER[shiny={self.offer_is_shiny} num={self.offer_dex_num}], WANTED[shiny={self.want_is_shiny} num={self.want_dex_num}]')
 
-    @discord.ui.button(label='Accept', style=discord.ButtonStyle.primary, custom_id='accept_button')
+    @discord.ui.button(label='Accept', style=discord.ButtonStyle.success, custom_id='accept_button')
     async def trade_button_callback(
         self,
         interaction: discord.Interaction,
@@ -92,7 +92,7 @@ class TradeView(discord.ui.View):
                 await interaction.followup.send("A database error occurred. Please try again later.", ephemeral=True)
                 logging.error("DB error during trade", exc_info=e)
 
-    @discord.ui.button(label='Cancel', style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='Cancel', style=discord.ButtonStyle.danger)
     async def cancel_button_callback(
         self,
         interaction: discord.Interaction,
