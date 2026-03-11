@@ -42,6 +42,30 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+async def get_resized_gif(national_dex_number: int, is_shiny: bool, scale: int) -> tuple[discord.File, str]:
+    response = requests.get(poke_api_url + '/pokemon/' + str(national_dex_number))
+    response.raise_for_status()
+    data = response.json()
+    sprite_url = data['sprites']['other']['showdown']['front_shiny' if is_shiny else 'front_default']
+
+    # Download GIF
+    response = requests.get(sprite_url)
+    gif_bytes = response.content
+
+    # Upscale with gifsicle
+    process = subprocess.Popen(
+        ['gifsicle', '--no-warnings', '--scale', str(scale), '--colors', '256'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE
+    )
+    resized_bytes, _ = process.communicate(input=gif_bytes)
+
+    # Wrap bytes in BytesIO so discord.File can read it
+    resized_file = io.BytesIO(resized_bytes)
+
+    return discord.File(fp=resized_file, filename='pokemon.gif'), str.capitalize(data['name'])
+
+
 # Extend commands.Bot to schedule Pokémon spawning
 class TallGrass(commands.Bot):
     channel = None
@@ -51,13 +75,8 @@ class TallGrass(commands.Bot):
         # Roll for shiny
         is_shiny = random.randint(1, shiny_spawn_one_in) == 1
 
-        # Retrieve url and name info for a random Pokémon from PokeApi
+        # Pick a random Pokémon
         spawned_pokemon_id = random.randint(1, pokemon_count)
-        response = requests.get(poke_api_url + '/pokemon/' + str(spawned_pokemon_id))
-        response.raise_for_status()
-        data = response.json()
-        sprite_url = data['sprites']['other']['showdown']['front_shiny' if is_shiny else 'front_default']
-        spawned_pokemon_name = str.capitalize(data['name'])
 
         # Determine catch percent from the species endpoint
         response = requests.get(poke_api_url + '/pokemon-species/' + str(spawned_pokemon_id))
@@ -70,22 +89,8 @@ class TallGrass(commands.Bot):
         else:
             spawned_pokemon_catch_percent = regular_chance_percent
 
-        # Download GIF
-        response = requests.get(sprite_url)
-        gif_bytes = response.content
+        file, spawned_pokemon_name = await get_resized_gif(spawned_pokemon_id, is_shiny, 2)
 
-        # Upscale with gifsicle
-        process = subprocess.Popen(
-            ['gifsicle', '--no-warnings', '--scale', '2', '--colors', '256'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE
-        )
-        resized_bytes, _ = process.communicate(input=gif_bytes)
-
-        # Wrap bytes in BytesIO so discord.File can read it
-        resized_file = io.BytesIO(resized_bytes)
-
-        file = discord.File(fp=resized_file, filename='pokemon.gif')
         shiny_emoji = ' :sparkles: ' if is_shiny else ''
         embed = discord.Embed(title=f'Wild {shiny_emoji}{spawned_pokemon_name}{shiny_emoji} appears!', color=discord.Color.dark_green())
         embed.set_image(url='attachment://pokemon.gif')
@@ -95,7 +100,7 @@ class TallGrass(commands.Bot):
             spawned_pokemon_id=spawned_pokemon_id,
             spawned_pokemon_name=spawned_pokemon_name,
             spawned_pokemon_catch_percent=spawned_pokemon_catch_percent,
-            sprite_url=sprite_url,
+            sprite_url='', # TODO Remove this from the db
             is_shiny=is_shiny
         )
 
@@ -136,6 +141,9 @@ async def init(interaction: discord.Interaction):
 @bot.tree.command(name='start', description='Start spawning Pokémon in this channel')
 @discord.app_commands.default_permissions(administrator=True)
 async def start(interaction: discord.Interaction):
+    if bot.spawner_task.is_running():
+        await interaction.response.send_message(f'Spawning already active in {interaction.channel.name}')
+        return
     bot.channel = interaction.channel
     bot.spawner_task.change_interval(seconds=random.randint(min_minutes_to_spawn, max_minutes_to_spawn)) # TODO Swap to minutes
     bot.spawner_task.start()
@@ -172,7 +180,7 @@ async def box(interaction: discord.Interaction, user: discord.Member = None):
     embed = discord.Embed(
         title=f"{view_user.name}'s Box",
         description='\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows),
-        color=discord.Color.blurple()
+        color=discord.Color.purple()
     )
     embed.set_thumbnail(url=view_user.display_avatar.url)
 
@@ -200,9 +208,16 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
         await interaction.followup.send(f'You do not own {offer_pokemon}')
         return
 
-    offer_shiny_str = ' shiny' if offer_is_shiny else ""
-    want_shiny_str = ' shiny' if want_is_shiny else ""
-    await interaction.followup.send(f'Trade{offer_shiny_str} #{offer_dex_num} for{want_shiny_str} #{want_dex_num}')
+    file, name = await get_resized_gif(offer_dex_num, offer_is_shiny, 2)
+    shiny_emoji = ' :sparkles: ' if offer_is_shiny else ''
+    embed = discord.Embed(title=f"{interaction.user.name}'s {shiny_emoji}{name}{shiny_emoji}", color=discord.Color.blue())
+    embed.set_image(url='attachment://pokemon.gif')
+    await interaction.channel.send(content='# Trade Offer!', embed=embed, file=file)
+
+    file, name = await get_resized_gif(want_dex_num, want_is_shiny, 2)
+    shiny_emoji = ' :sparkles: ' if want_is_shiny else ''
+    embed = discord.Embed(title=f'For {shiny_emoji}{name}{shiny_emoji}',color=discord.Color.blue())
+    embed.set_image(url='attachment://pokemon.gif')
     view = trade_view.TradeView(
         log_handler=handler,
         offer_user_id=interaction.user.id,
@@ -211,9 +226,11 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
         want_dex_num=want_dex_num,
         want_is_shiny=want_is_shiny
     )
-    # TODO Add logging
-    message = await interaction.followup.send(view=view)
+    message = await interaction.channel.send(embed=embed, file=file, view=view)
     view.message = message
+
+    await interaction.delete_original_response()
+    logger.info(f'{interaction.user.id} posted a trade offer: {offer_pokemon} for {want_pokemon}')
 
 
 # Now we're ready to spin up the bot!

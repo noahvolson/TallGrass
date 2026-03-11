@@ -41,15 +41,19 @@ class TradeView(discord.ui.View):
         self.complete = True
 
         for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                if item.custom_id == 'accept_button':
+                    item.label = end_label
             item.disabled = True
 
         if self.message:
-            await self.message.edit(content=end_label, view=self)
+            await self.message.edit(view=self)
 
     async def on_timeout(self):
-        await self.end_trade('Trade Expired')
+        await self.end_trade('Expired')
+        logger.info(f'{self.offer_user_id} trade expired: OFFER[shiny={self.offer_is_shiny} num={self.offer_dex_num}], WANTED[shiny={self.want_is_shiny} num={self.want_dex_num}]')
 
-    @discord.ui.button(label='Accept', style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='Accept', style=discord.ButtonStyle.primary, custom_id='accept_button')
     async def trade_button_callback(
         self,
         interaction: discord.Interaction,
@@ -75,8 +79,11 @@ class TradeView(discord.ui.View):
                     self.offer_is_shiny,
                     self.want_is_shiny
                 )
-                await self.end_trade('Trade Completed')
+                await self.end_trade('Completed')
                 await interaction.followup.send("Trade successful!")
+                logger.info(f'{interaction.user.id} receives shiny={self.offer_is_shiny} num={self.offer_dex_num}, {self.offer_user_id} receives shiny={self.want_is_shiny} num={self.want_dex_num}')
+
+                # TODO Maybe add a transactions table to record trades?
 
             except ValueError as e:
                 await interaction.followup.send(f"Trade failed: {e}", ephemeral=True)
@@ -101,4 +108,6 @@ class TradeView(discord.ui.View):
                 await interaction.followup.send(f"You are not the owner of this trade", ephemeral=True)
                 return
 
-            await self.end_trade('Trade Cancelled')
+            await self.end_trade('Cancelled')
+            logger.info(f'{interaction.user.id} cancelled their trade: OFFER[shiny={self.offer_is_shiny} num={self.offer_dex_num}], WANTED[shiny={self.want_is_shiny} num={self.want_dex_num}]')
+
