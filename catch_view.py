@@ -106,7 +106,7 @@ class CatchView(discord.ui.View):
                         self.is_shiny
                     )
                 except Exception as e:
-                    logger.error(f'Failed to add {self.spawned_pokemon_name} to user {interaction.user.id}: {e}')
+                    logger.error(f"Failed to add {'shiny ' if self.is_shiny else ''}{self.spawned_pokemon_name} to user {interaction.user.id}: {e}")
                     return
 
                 self.claimed = True
@@ -116,9 +116,10 @@ class CatchView(discord.ui.View):
                 else:
                     await interaction.response.edit_message(view=self)
                 self.cooldowns = {}
-                message_string = f'Gotcha! {self.spawned_pokemon_name} was caught by {interaction.user.display_name}!'
+                shiny_emoji = ' :sparkles: ' if self.is_shiny else ''
+                message_string = f"Gotcha! {shiny_emoji}{self.spawned_pokemon_name}{shiny_emoji} was caught by {interaction.user.display_name}!"
                 await interaction.followup.send(message_string)
-                logger.info(f'{self.spawned_pokemon_name} was caught by {interaction.user.display_name}')
+                logger.info(f"{'Shiny ' if self.is_shiny else ''}{self.spawned_pokemon_name} was caught by {interaction.user.display_name}")
             else:
                 message_string = 'Aww! It appeared to be caught!'
                 if last_msg:

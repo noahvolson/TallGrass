@@ -12,6 +12,7 @@ import trade_view
 import discord
 import requests
 
+from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
@@ -104,18 +105,20 @@ class TallGrass(commands.Bot):
             is_shiny=is_shiny
         )
 
-        logger.info(f'Spawning {spawned_pokemon_name} in channel: {self.channel.name}')
+        logger.info(f"Spawning {'shiny ' if is_shiny else ''}{spawned_pokemon_name} in channel: {self.channel.name}")
         message = await self.channel.send(embed=embed, file=file, view=view)
         view.message = message
 
     @tasks.loop(seconds=1) # Placeholder. Interval set in start()
     async def spawner_task(self):
-        # TODO use self.spawner_task.change_interval(seconds=<RANDOM_INTERVAL_HERE>)
-
         if not self.channel:
             return
 
         await self.spawn_pokemon()
+
+        seconds = random.randint(min_minutes_to_spawn, max_minutes_to_spawn)
+        logger.info(f'Next spawn will occur {seconds} seconds from now at {datetime.now() + timedelta(seconds=seconds)}')
+        self.spawner_task.change_interval(seconds=seconds)  # TODO Swap to minutes
 
 # Init TallGrass bot
 intents = discord.Intents.default()
@@ -145,7 +148,6 @@ async def start(interaction: discord.Interaction):
         await interaction.response.send_message(f'Spawning already active in {interaction.channel.name}')
         return
     bot.channel = interaction.channel
-    bot.spawner_task.change_interval(seconds=random.randint(min_minutes_to_spawn, max_minutes_to_spawn)) # TODO Swap to minutes
     bot.spawner_task.start()
     logger.info(f'{interaction.user.display_name} activated spawning in channel: {interaction.channel.name}')
     await interaction.response.send_message(f'Spawning Pokémon in {interaction.channel.name}...')
