@@ -6,41 +6,41 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS user_pokemon (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
                 national_dex_number INTEGER NOT NULL,
                 name TEXT NOT NULL,
-                image_url TEXT NOT NULL,
                 is_shiny BOOLEAN NOT NULL
             );
         """)
         await db.commit()
 
-async def add_user_pokemon(user_id: int, national_dex_number: int, name: str, image_url: str, is_shiny: bool):
+async def add_user_pokemon(user_id: int, guild_id: int, national_dex_number: int, name: str, is_shiny: bool):
     async with aiosqlite.connect("bot.db") as db:
         await db.execute("""
-            INSERT INTO user_pokemon (user_id, national_dex_number, name, image_url, is_shiny)
+            INSERT INTO user_pokemon (user_id, guild_id, national_dex_number, name, is_shiny)
             VALUES (?, ?, ?, ?, ?)
-        """, (user_id, national_dex_number, name, image_url, is_shiny))
+        """, (user_id, guild_id, national_dex_number, name, is_shiny))
         await db.commit()
 
-async def user_has_pokemon(user_id: int, national_dex_number: int, is_shiny: bool) -> bool:
+async def user_has_pokemon(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> bool:
     async with aiosqlite.connect("bot.db") as db:
         cursor = await db.execute("""
             SELECT 1
             FROM user_pokemon
-            WHERE user_id = ? AND national_dex_number = ? AND is_shiny = ?
+            WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
             LIMIT 1
-        """, (user_id, national_dex_number, int(is_shiny)))
+        """, (user_id, guild_id, national_dex_number, int(is_shiny)))
         row = await cursor.fetchone()
         await cursor.close()
         return row is not None
 
-async def get_all_user_pokemon(user_id: int):
+async def get_all_user_pokemon(user_id: int, guild_id: int):
     async with aiosqlite.connect("bot.db") as db:
         cursor = await db.execute("""
-            SELECT id, national_dex_number, name, image_url, is_shiny
+            SELECT id, national_dex_number, name, is_shiny
             FROM user_pokemon
-            WHERE user_id = ?
-        """, (user_id,))
+            WHERE user_id = ? AND guild_id = ?
+        """, (user_id, guild_id))
         rows = await cursor.fetchall()
         await cursor.close()
         return [
@@ -48,8 +48,7 @@ async def get_all_user_pokemon(user_id: int):
                 "id": row[0],
                 "national_dex_number": row[1],
                 "name": row[2],
-                "image_url": row[3],
-                "is_shiny": bool(row[4])
+                "is_shiny": bool(row[3])
             }
             for row in rows
         ]

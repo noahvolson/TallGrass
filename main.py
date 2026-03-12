@@ -103,7 +103,6 @@ class TallGrass(commands.Bot):
             spawned_pokemon_id=spawned_pokemon_id,
             spawned_pokemon_name=spawned_pokemon_name,
             spawned_pokemon_catch_percent=spawned_pokemon_catch_percent,
-            sprite_url='', # TODO Remove this from the db
             is_shiny=is_shiny
         )
 
@@ -206,9 +205,9 @@ async def box(interaction: discord.Interaction, user: discord.Member = None):
 
     view_user = user if user else interaction.user
 
-    pokemon_list = await database.get_all_user_pokemon(view_user.id)
+    pokemon_list = await database.get_all_user_pokemon(view_user.id, interaction.guild_id)
     emojis = [get_emoji(p['national_dex_number'], p['is_shiny'], p['name']) for p in pokemon_list]
-    num_columns = 4 # With any more, the mobile view will be squished
+    num_columns = 4 # More than 4 columns and the mobile view will be squished
     rows = [emojis[i:i+num_columns] for i in range(0, len(emojis), num_columns)]
     embed = discord.Embed(
         title=f"{view_user.name}'s Box",
@@ -236,7 +235,7 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
         await interaction.followup.send(f'Error parsing trade: {e}')
         return
 
-    own_offer = await database.user_has_pokemon(interaction.user.id, offer_dex_num, offer_is_shiny)
+    own_offer = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, offer_dex_num, offer_is_shiny)
     if not own_offer:
         await interaction.followup.send(f'You do not own {offer_pokemon}')
         return

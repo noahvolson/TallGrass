@@ -22,7 +22,7 @@ logger.setLevel(log_level)
 
 class CatchView(discord.ui.View):
 
-    def __init__(self, log_handler, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, sprite_url, is_shiny):
+    def __init__(self, log_handler, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, is_shiny):
 
         if log_handler:
             logger.addHandler(log_handler)
@@ -36,7 +36,6 @@ class CatchView(discord.ui.View):
         self.spawned_pokemon_id = spawned_pokemon_id
         self.spawned_pokemon_name = spawned_pokemon_name
         self.spawned_pokemon_catch_percent = spawned_pokemon_catch_percent
-        self.sprite_url = sprite_url
         self.is_shiny = is_shiny
 
         self.flee_time = datetime.now() + timedelta(seconds=catch_window_sec)
@@ -103,9 +102,9 @@ class CatchView(discord.ui.View):
                 try:
                     await database.add_user_pokemon(
                         interaction.user.id,
+                        interaction.guild_id,
                         self.spawned_pokemon_id,
                         self.spawned_pokemon_name,
-                        self.sprite_url,
                         self.is_shiny
                     )
                 except Exception as e:
