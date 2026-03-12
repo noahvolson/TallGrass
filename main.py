@@ -212,13 +212,15 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
 
     file, name = await get_resized_gif(offer_dex_num, offer_is_shiny, 2)
     shiny_emoji = ' :sparkles: ' if offer_is_shiny else ''
-    embed = discord.Embed(title=f"{interaction.user.name}'s {shiny_emoji}{name}{shiny_emoji}", color=discord.Color.blue())
+    offer_display_name = f'{shiny_emoji}{name}{shiny_emoji}'
+    embed = discord.Embed(title=f"{interaction.user.name}'s {offer_display_name}", color=discord.Color.blue())
     embed.set_image(url='attachment://pokemon.gif')
     await interaction.channel.send(content='# Trade Offer!', embed=embed, file=file)
 
     file, name = await get_resized_gif(want_dex_num, want_is_shiny, 2)
     shiny_emoji = ' :sparkles: ' if want_is_shiny else ''
-    embed = discord.Embed(title=f'For {shiny_emoji}{name}{shiny_emoji}',color=discord.Color.blue())
+    want_display_name = f'{shiny_emoji}{name}{shiny_emoji}'
+    embed = discord.Embed(title=f'For {want_display_name}',color=discord.Color.blue())
     embed.set_image(url='attachment://pokemon.gif')
     view = trade_view.TradeView(
         log_handler=handler,
@@ -226,7 +228,9 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
         offer_dex_num=offer_dex_num,
         offer_is_shiny=offer_is_shiny,
         want_dex_num=want_dex_num,
-        want_is_shiny=want_is_shiny
+        want_is_shiny=want_is_shiny,
+        offer_display_name=offer_display_name,
+        want_display_name=want_display_name
     )
     message = await interaction.channel.send(embed=embed, file=file, view=view)
     view.message = message

@@ -18,7 +18,7 @@ logger.setLevel(log_level)
 
 class TradeView(discord.ui.View):
 
-    def __init__(self, log_handler, offer_user_id, offer_dex_num, offer_is_shiny, want_dex_num, want_is_shiny):
+    def __init__(self, log_handler, offer_user_id, offer_dex_num, offer_is_shiny, want_dex_num, want_is_shiny, offer_display_name, want_display_name):
 
         if log_handler:
             logger.addHandler(log_handler)
@@ -32,6 +32,9 @@ class TradeView(discord.ui.View):
         self.offer_is_shiny = offer_is_shiny
         self.want_dex_num = want_dex_num
         self.want_is_shiny = want_is_shiny
+
+        self.offer_display_name = offer_display_name
+        self.want_display_name = want_display_name
 
         super().__init__(timeout=trade_window_seconds)
 
@@ -67,7 +70,7 @@ class TradeView(discord.ui.View):
             await interaction.response.defer() # In case the db work takes too long
 
             if self.offer_user_id == interaction.user.id:
-                await interaction.followup.send(f"You are the owner of this trade", ephemeral=True)
+                await interaction.followup.send('You are the owner of this trade', ephemeral=True)
                 return
 
             try:
@@ -79,10 +82,17 @@ class TradeView(discord.ui.View):
                     self.offer_is_shiny,
                     self.want_is_shiny
                 )
-                await self.end_trade('Completed')
-                await interaction.followup.send("Trade successful!")
                 logger.info(f'{interaction.user.id} receives shiny={self.offer_is_shiny} num={self.offer_dex_num}, {self.offer_user_id} receives shiny={self.want_is_shiny} num={self.want_dex_num}')
 
+                await self.end_trade('Completed')
+
+                # Alert both users. Acceptee via ephemeral message, offerer via DM
+                await interaction.followup.send("Trade successful!", ephemeral=True)
+                try:
+                    offer_user = await interaction.client.fetch_user(self.offer_user_id)
+                    await offer_user.send(f'Your trade offer was accepted! {self.offer_display_name} has joined your team in exchange for {self.want_display_name}')
+                except discord.Forbidden:
+                    pass
                 # TODO Maybe add a transactions table to record trades?
 
             except ValueError as e:
