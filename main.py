@@ -208,7 +208,8 @@ async def box(interaction: discord.Interaction, user: discord.Member = None):
 
     pokemon_list = await database.get_all_user_pokemon(view_user.id)
     emojis = [get_emoji(p['national_dex_number'], p['is_shiny'], p['name']) for p in pokemon_list]
-    rows = [emojis[i:i+6] for i in range(0, len(emojis), 6)]
+    num_columns = 4 # With any more, the mobile view will be squished
+    rows = [emojis[i:i+num_columns] for i in range(0, len(emojis), num_columns)]
     embed = discord.Embed(
         title=f"{view_user.name}'s Box",
         description='\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows),
