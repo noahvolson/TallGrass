@@ -3,7 +3,9 @@ import json
 import logging
 import os
 import random
+import re
 import subprocess
+import unicodedata
 
 import database
 import catch_view
@@ -163,13 +165,41 @@ async def stop(interaction: discord.Interaction):
 
 # Helper for box()
 def get_emoji(national_dex_number: int, is_shiny: bool, name: str) -> str:
+    sanitized_name = sanitize_emoji_name(name)
     key = 'pokemon_' + str(national_dex_number) + ("_shiny" if is_shiny else "")
     emoji_id = emoji_map.get(key)
 
     if emoji_id is None:
         raise KeyError(f"No emoji found for Pokémon #{national_dex_number}{' (shiny)' if is_shiny else ''}")
 
-    return f"<:{'shiny_' if is_shiny else ''}{name.lower()}_{national_dex_number}:{emoji_id}>"
+    return f"<:{'shiny_' if is_shiny else ''}{sanitized_name}_{national_dex_number}:{emoji_id}>"
+
+def sanitize_emoji_name(name: str) -> str:
+    replacements = {
+        '♀': '_f',
+        '♂': '_m',
+        ' ': '_',
+        '-': '_',
+        ':': '_',
+    }
+
+    # Apply explicit mappings
+    for char, replacement in replacements.items():
+        name = name.replace(char, replacement)
+
+    # Decompose accented chars (é -> e + combining accent)
+    name = unicodedata.normalize('NFKD', name)
+
+    # Keep only ASCII alphanumeric and underscores, drop everything else
+    name = ''.join(
+        c for c in name
+        if c == '_' or c.isascii() and c.isalnum()
+    )
+
+    # Collapse multiple underscores and strip edges
+    name = re.sub(r'_+', '_', name).strip('_')
+
+    return name.lower()
 
 @bot.tree.command(name='box', description='View your pokemon collection')
 async def box(interaction: discord.Interaction, user: discord.Member = None):
