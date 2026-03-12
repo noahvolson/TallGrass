@@ -90,7 +90,7 @@ class TradeView(discord.ui.View):
                 await interaction.followup.send("Trade successful!", ephemeral=True)
                 try:
                     offer_user = await interaction.client.fetch_user(self.offer_user_id)
-                    await offer_user.send(f'Your trade offer was accepted! {self.offer_display_name} has joined your team in exchange for {self.want_display_name}')
+                    await offer_user.send(f'Your trade offer was accepted! {self.want_display_name} has joined your team in exchange for {self.offer_display_name}')
                 except discord.Forbidden:
                     pass
                 # TODO Maybe add a transactions table to record trades?
