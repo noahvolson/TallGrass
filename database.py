@@ -54,6 +54,7 @@ async def get_all_user_pokemon(user_id: int, guild_id: int):
         ]
 
 async def trade_pokemon(
+        guild_id: int,
         offer_user_id: int,
         want_user_id: int,
         offer_national_dex_number: int,
@@ -65,9 +66,9 @@ async def trade_pokemon(
         # Verify from_user owns the offered Pokémon
         cursor = await db.execute("""
             SELECT id FROM user_pokemon
-            WHERE user_id = ? AND national_dex_number = ? AND is_shiny = ?
+            WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
             LIMIT 1
-        """, (offer_user_id, offer_national_dex_number, offer_is_shiny))
+        """, (offer_user_id, guild_id, offer_national_dex_number, offer_is_shiny))
         offer_row = await cursor.fetchone()
         await cursor.close()
 
@@ -77,9 +78,9 @@ async def trade_pokemon(
         # Verify to_user owns the wanted Pokémon
         cursor = await db.execute("""
             SELECT id FROM user_pokemon
-            WHERE user_id = ? AND national_dex_number = ? AND is_shiny = ?
+            WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
             LIMIT 1
-        """, (want_user_id, want_national_dex_number, want_is_shiny))
+        """, (want_user_id, guild_id, want_national_dex_number, want_is_shiny))
         want_row = await cursor.fetchone()
         await cursor.close()
 

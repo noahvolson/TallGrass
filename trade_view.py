@@ -75,6 +75,7 @@ class TradeView(discord.ui.View):
 
             try:
                 await database.trade_pokemon(
+                    interaction.guild_id,
                     self.offer_user_id,
                     interaction.user.id,
                     self.offer_dex_num,
