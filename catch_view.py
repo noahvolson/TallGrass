@@ -7,6 +7,7 @@ import time
 
 import discord
 
+from collections import defaultdict
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -29,6 +30,7 @@ class CatchView(discord.ui.View):
 
         self.message = None # Set after sending the view
         self.cooldowns = {} # user_id -> (last_click_time, last_message)
+        self.attempts = defaultdict(int) # user_id -> num_failed_attempts
         self.claimed = False
         self.claim_lock = asyncio.Lock()
 
@@ -119,7 +121,26 @@ class CatchView(discord.ui.View):
                     await interaction.response.edit_message(view=self)
                 self.cooldowns = {}
                 shiny_emoji = ' :sparkles: ' if self.is_shiny else ''
-                message_string = f"Gotcha! {shiny_emoji}{self.spawned_pokemon_name}{shiny_emoji} was caught by {interaction.user.display_name}!"
+
+                # Collect stats for this Pokémon
+                self.attempts[user_id] += 1
+                total_attempts = sum(self.attempts.values())
+                num_users = len(self.attempts)
+
+                attempts_lines_list = []
+                for user_id, count in sorted(self.attempts.items(), key=lambda x: x[1], reverse=True):
+                    member = await interaction.guild.fetch_member(user_id)
+                    display_name = member.display_name
+                    attempts_lines_list.append(f"- {display_name}: {count} attempt{'s' if count != 1 else ''}")
+
+                attempts_lines = "\n".join(attempts_lines_list)
+                attempts_summary = f"\n\n**:busts_in_silhouette: {num_users} user{'s' if num_users != 1 else ''} tried {total_attempts} time{'s' if total_attempts != 1 else ''} total**\n{attempts_lines}"
+
+                message_string = (
+                    f"### Gotcha! {shiny_emoji}{self.spawned_pokemon_name}{shiny_emoji} was caught by "
+                    f"{interaction.user.display_name}!{attempts_summary}"
+                )
+
                 await interaction.followup.send(message_string)
                 logger.info(f"{'Shiny ' if self.is_shiny else ''}{self.spawned_pokemon_name} was caught by {interaction.user.display_name}")
             else:
@@ -132,3 +153,4 @@ class CatchView(discord.ui.View):
 
                 # Store the time and message object
                 self.cooldowns[user_id] = (now, sent_msg)
+                self.attempts[user_id] += 1
