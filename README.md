@@ -1,6 +1,8 @@
 # TallGrass
 A Discord bot to spawn collectible Pokemon on your server
 
+![Wild Nidoqueen appears](assets/spawn.png)
+
 ## Commands
 `/init` [ADMIN ONLY] Set up the database for TallGrass
 
