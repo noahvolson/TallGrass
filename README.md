@@ -48,7 +48,9 @@ python3 emoji_upload/upload_emojis.py
 Manually upload any emojis that fail to the developer portal.
 See `emoji_upload/manually_fixed/` for a few resized emojis (the ones that failed for me)
 
-Retrieve their `EMOJI ID` values, then add them to emoji_map.json. To validate that all Pokémon have an emoji, you can run the verification script
+Retrieve their `EMOJI ID` values, then add them to `emoji_upload/emoji_map.json`
+
+To validate that all Pokémon have an emoji, you can run the verification script
 ```
 python3 emoji_upload/validate_emoji_map.py
 ```
