@@ -28,8 +28,8 @@ rare_chance_percent         = int(os.getenv('RARE_CHANCE_PERCENT'))
 shiny_chance_percent        = int(os.getenv('SHINY_CHANCE_PERCENT'))
 regular_chance_percent      = int(os.getenv('REGULAR_CHANCE_PERCENT'))
 shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
-min_minutes_to_spawn        = int(os.getenv('MIN_MINUTES_TO_SPAWN'))
-max_minutes_to_spawn        = int(os.getenv('MAX_MINUTES_TO_SPAWN'))
+min_seconds_to_spawn        = int(os.getenv('MIN_SECONDS_TO_SPAWN'))
+max_seconds_to_spawn        = int(os.getenv('MAX_SECONDS_TO_SPAWN'))
 
 # Map of emoji_name -> emoji_id used to display a user's box
 with open('emoji_upload/emoji_map.json', 'r') as f:
@@ -72,6 +72,8 @@ async def get_resized_gif(national_dex_number: int, is_shiny: bool, scale: int) 
 # Extend commands.Bot to schedule Pokémon spawning
 class TallGrass(commands.Bot):
     channel = None
+    start_active_hour: int
+    end_active_hour: int
 
     async def spawn_pokemon(self):
 
@@ -110,16 +112,37 @@ class TallGrass(commands.Bot):
         message = await self.channel.send(embed=embed, file=file, view=view)
         view.message = message
 
-    @tasks.loop(seconds=1) # Placeholder. Interval set in start()
+    @tasks.loop(seconds=1) # Updated on each task run
     async def spawner_task(self):
         if not self.channel:
             return
 
+        seconds = random.randint(min_seconds_to_spawn, max_seconds_to_spawn)
+
+        now = datetime.now()
+        if now.hour < self.start_active_hour or now.hour > self.end_active_hour: # Are we in downtime?
+            next_active = now.replace(hour=self.start_active_hour, minute=0, second=0, microsecond=0)
+
+            if next_active < now:
+                next_active += timedelta(days=1)
+
+            seconds_until_active = int((next_active - now).total_seconds())
+            total_seconds = seconds_until_active + seconds  # wake up + random delay before first spawn
+
+            next_spawn_time = next_active + timedelta(seconds=seconds)
+            logger.info(
+                f'Skipping spawn during downtime. Next active window starts at '
+                f'{next_active}, scheduling wake-up in {seconds_until_active}s '
+                f'(+{seconds}s random delay). Next spawn at {next_spawn_time}.'
+            )
+
+            self.spawner_task.change_interval(seconds=total_seconds)
+            return
+
         await self.spawn_pokemon()
 
-        seconds = random.randint(min_minutes_to_spawn, max_minutes_to_spawn)
         logger.info(f'Next spawn will occur {seconds} seconds from now at {datetime.now() + timedelta(seconds=seconds)}')
-        self.spawner_task.change_interval(seconds=seconds)  # TODO Swap to minutes
+        self.spawner_task.change_interval(seconds=seconds)
 
 # Init TallGrass bot
 intents = discord.Intents.default()
@@ -142,14 +165,19 @@ async def init(interaction: discord.Interaction):
 
     await interaction.response.send_message(f'Tallgrass initialized!')
 
-@bot.tree.command(name='start', description='Start spawning Pokémon in this channel')
+@bot.tree.command(name='start', description='Start spawning Pokémon in this channel. Accepts an active window in military time')
 @discord.app_commands.default_permissions(administrator=True)
-async def start(interaction: discord.Interaction):
+async def start(interaction: discord.Interaction, start_active_hour: int | None = 0, end_active_hour: int | None = 23):
     if bot.spawner_task.is_running():
         await interaction.response.send_message(f'Spawning already active in {interaction.channel.name}')
         return
+
     bot.channel = interaction.channel
+    bot.start_active_hour = start_active_hour
+    bot.end_active_hour = end_active_hour
+    bot.spawner_task.change_interval(seconds=1) # Reset interval if we had already started
     bot.spawner_task.start()
+
     logger.info(f'{interaction.user.display_name} activated spawning in channel: {interaction.channel.name}')
     await interaction.response.send_message(f'Spawning Pokémon in {interaction.channel.name}...')
 
@@ -157,8 +185,7 @@ async def start(interaction: discord.Interaction):
 @bot.tree.command(name='stop', description='Stop spawning Pokémon in this channel')
 @discord.app_commands.default_permissions(administrator=True)
 async def stop(interaction: discord.Interaction):
-    bot.channel = None
-    bot.spawner_task.stop()
+    bot.spawner_task.cancel()
     logger.info(f'{interaction.user.display_name} deactivated spawning in channel: {interaction.channel.name}')
     await interaction.response.send_message(f'Spawning deactivated in {interaction.channel.name}')
 
