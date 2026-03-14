@@ -254,17 +254,17 @@ def parse_pokemon(pokemon: str) -> tuple[int, bool]:
 
 @bot.tree.command(name='trade', description='Post a trade offer')
 async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokemon: str):
-    await interaction.response.defer() # DB checking can take a bit
+    await interaction.response.defer(ephemeral=True) # DB checking can take a bit
     try:
         offer_dex_num, offer_is_shiny = parse_pokemon(offer_pokemon)
         want_dex_num, want_is_shiny = parse_pokemon(want_pokemon)
     except ValueError as e:
-        await interaction.followup.send(f'Error parsing trade: {e}')
+        await interaction.followup.send('Example usage: `/trade offer_pokemon:raichu_26 want_pokemon:shiny_ninetales_38`', ephemeral=True)
         return
 
     own_offer = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, offer_dex_num, offer_is_shiny)
     if not own_offer:
-        await interaction.followup.send(f'You do not own {offer_pokemon}')
+        await interaction.followup.send(f'You do not own {offer_pokemon}', ephemeral=True)
         return
 
     file, name = await get_resized_gif(offer_dex_num, offer_is_shiny, 2)
