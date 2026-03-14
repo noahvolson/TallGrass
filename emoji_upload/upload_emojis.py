@@ -29,8 +29,8 @@ SHINY_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/po
 
 UPLOAD_COUNT    = 906
 INCLUDE_SHINY   = True
-EMOJI_MAP_FILE  = "emoji_map.json"
-FAILED_FILE     = "failed.json"
+EMOJI_MAP_FILE  = "emoji_upload/emoji_map.json"
+FAILED_FILE     = "emoji_upload/failed.json"
 
 def load_json_file(path: str) -> dict | list:
     if os.path.exists(path):
