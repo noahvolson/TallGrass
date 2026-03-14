@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 token                       = os.getenv('DISCORD_TOKEN')
 poke_api_url                = os.getenv('POKE_API_URL')
+notification_role_name      = os.getenv('NOTIFICATION_ROLE_NAME')
 pokemon_count               = int(os.getenv('POKEMON_COUNT'))
 log_level                   = int(os.getenv('LOG_LEVEL'))
 rare_chance_percent         = int(os.getenv('RARE_CHANCE_PERCENT'))
@@ -109,7 +110,9 @@ class TallGrass(commands.Bot):
         )
 
         logger.info(f"Spawning {'shiny ' if is_shiny else ''}{spawned_pokemon_name} in channel: {self.channel.name}")
-        message = await self.channel.send(embed=embed, file=file, view=view)
+
+        role = discord.utils.get(self.channel.guild.roles, name=notification_role_name)
+        message = await self.channel.send(content=f'<@&{role.id}>', embed=embed, file=file, view=view)
         view.message = message
 
     @tasks.loop(seconds=1) # Updated on each task run
@@ -169,7 +172,19 @@ async def init(interaction: discord.Interaction):
         await database.init_db()
     except Exception as e:
         logger.error(f'Failed to initialize database: {e}')
-        interaction.response.send_message('Failed to initialize database. Check log.')
+        await interaction.response.send_message('Failed to initialize database. Check log.')
+        return
+
+    existing = discord.utils.get(interaction.guild.roles, name=notification_role_name)
+    if existing:
+        await interaction.response.send_message('A role called grass-watchers already exists in this server.')
+        return
+
+    await interaction.guild.create_role(
+        name='grass-watchers',
+        mentionable=True,
+        reason="Created for Pokémon spawn notifications"
+    )
 
     await interaction.response.send_message(f'Tallgrass initialized!')
 
@@ -303,6 +318,24 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
     await interaction.delete_original_response()
     logger.info(f'{interaction.user.id} posted a trade offer: {offer_pokemon} for {want_pokemon}')
 
+@bot.tree.command(name='notifyme', description="Adds or removes the notification role from your user")
+async def notifyme(interaction: discord.Interaction, enable: bool):
+    member = await interaction.guild.fetch_member(interaction.user.id)
+    role = discord.utils.get(interaction.guild.roles, name=notification_role_name)
+    has_role = role in member.roles
+
+    if enable:
+        if has_role:
+            await interaction.response.send_message(f'You already have the {notification_role_name} role', ephemeral=True)
+        else:
+            await member.add_roles(role)
+            await interaction.response.send_message(f'Added the {notification_role_name} role', ephemeral=True)
+    else:
+        if not has_role:
+            await interaction.response.send_message(f"You don't have the {notification_role_name} role", ephemeral=True)
+        else:
+            await member.remove_roles(role)
+            await interaction.response.send_message(f'Removed the {notification_role_name} role', ephemeral=True)
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
