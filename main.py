@@ -120,7 +120,15 @@ class TallGrass(commands.Bot):
         seconds = random.randint(min_seconds_to_spawn, max_seconds_to_spawn)
 
         now = datetime.now()
-        if now.hour < self.start_active_hour or now.hour > self.end_active_hour: # Are we in downtime?
+
+        if self.start_active_hour <= self.end_active_hour:
+            # Active window is a normal range e.g. 8–22
+            in_downtime = now.hour < self.start_active_hour or now.hour >= self.end_active_hour
+        else:
+            # Active window wraps midnight e.g. 22–6
+            in_downtime = self.end_active_hour <= now.hour < self.start_active_hour
+
+        if in_downtime:
             next_active = now.replace(hour=self.start_active_hour, minute=0, second=0, microsecond=0)
 
             if next_active < now:
