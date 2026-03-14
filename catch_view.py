@@ -144,7 +144,7 @@ class CatchView(discord.ui.View):
                 await interaction.followup.send(message_string)
                 logger.info(f"{'Shiny ' if self.is_shiny else ''}{self.spawned_pokemon_name} was caught by {interaction.user.display_name}")
             else:
-                message_string = 'Aww! It appeared to be caught!'
+                message_string = 'Oh no! The Pokémon broke free!'
                 if last_msg:
                     sent_msg = await interaction.followup.send(message_string, ephemeral=True)
                 else:
