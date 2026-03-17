@@ -250,18 +250,18 @@ def sanitize_emoji_name(name: str) -> str:
 
     return name.lower()
 
+def build_pokemon_gallery(pokemon_list: list, num_columns: int = 4) -> str:
+    emojis = [get_emoji(p['national_dex_number'], p['is_shiny'], p['name']) for p in pokemon_list]
+    rows = [emojis[i:i+num_columns] for i in range(0, len(emojis), num_columns)]
+    return '\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows)
+
 @bot.tree.command(name='box', description='View your pokemon collection')
 async def box(interaction: discord.Interaction, user: discord.Member = None):
-
     view_user = user if user else interaction.user
-
     pokemon_list = await database.get_all_user_pokemon(view_user.id, interaction.guild_id)
-    emojis = [get_emoji(p['national_dex_number'], p['is_shiny'], p['name']) for p in pokemon_list]
-    num_columns = 4 # More than 4 columns and the mobile view will be squished
-    rows = [emojis[i:i+num_columns] for i in range(0, len(emojis), num_columns)]
     embed = discord.Embed(
         title=f"{view_user.name}'s Box",
-        description='\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows),
+        description=build_pokemon_gallery(pokemon_list),
         color=discord.Color.purple()
     )
     embed.set_thumbnail(url=view_user.display_avatar.url)
@@ -336,6 +336,119 @@ async def notifyme(interaction: discord.Interaction, enable: bool):
         else:
             await member.remove_roles(role)
             await interaction.response.send_message(f'Removed the {notification_role_name} role', ephemeral=True)
+
+def get_next_evolutions(dex_number):
+    species_data = requests.get(f'{poke_api_url}/pokemon-species/{dex_number}').json()
+    current_name = species_data['name']
+
+    chain_data = requests.get(species_data['evolution_chain']['url']).json()
+
+    # Find our place in the chain
+    node = chain_data['chain']
+    while node and node['species']['name'] != current_name:
+        node = next((child for child in node['evolves_to']), None)
+
+    if not node or not node['evolves_to']:
+        return []
+
+    results = []
+    for evo in node['evolves_to']:
+        next_species = requests.get(f'{poke_api_url}/pokemon-species/{evo["species"]["name"]}').json()
+        dex_number = next_species['id']
+        if dex_number <= pokemon_count:
+            results.append({'name': evo['species']['name'], 'dex_number': next_species['id']})
+    return results, current_name
+
+
+@bot.tree.command(name='evolve', description="Uses a rare candy to evolve a pokemon once")
+async def evolve(interaction: discord.Interaction, pokemon: str):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        current_dex_num, current_is_shiny = parse_pokemon(pokemon)
+    except ValueError:
+        await interaction.followup.send('Example usage: `/evolve pokemon:shiny_eevee_133`', ephemeral=True)
+        return
+
+    own_offer = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, current_dex_num, current_is_shiny)
+    if not own_offer:
+        pass  # TODO: uncomment ownership check after testing
+
+    try:
+        evolutions, official_name = get_next_evolutions(current_dex_num)
+    except requests.HTTPError:
+        await interaction.followup.send('Failed to look up evolution data. Please try again later.', ephemeral=True)
+        return
+
+    if not evolutions:
+        await interaction.followup.send(f'{pokemon.capitalize()} has no further evolutions.', ephemeral=True)
+        return
+
+    formatted_pokemon = [{'national_dex_number': e['dex_number'], 'is_shiny': current_is_shiny, 'name': e['name']} for e in evolutions]
+    embed = discord.Embed(
+        title=f"Please confirm the evolution for {official_name.capitalize()}",
+        description=build_pokemon_gallery(formatted_pokemon),
+        color=discord.Color.purple()
+    )
+
+    # Branching evolution — ask the user to pick
+    view = EvolutionChoiceView(interaction.user, official_name, current_dex_num, current_is_shiny, evolutions)
+    message = await interaction.followup.send(
+        embed=embed,
+        view=view,
+        ephemeral=True
+    )
+    view.message = message
+
+class EvolutionChoiceView(discord.ui.View):
+    def __init__(self, user, original_pokemon_name, original_dex_num, original_is_shiny, evolutions):
+        super().__init__(timeout=30)
+        self.user = user
+        self.original_pokemon_name = original_pokemon_name
+        self.original_dex_num = original_dex_num
+        self.original_is_shiny = original_is_shiny
+        self.message = None
+
+        for i, evo in enumerate(evolutions):
+            button = discord.ui.Button(
+                label=f"{evo['name'].capitalize()}",
+                style=discord.ButtonStyle.primary,
+                row = i // 4
+            )
+            # Capture evo in the closure
+            button.callback = self._make_callback(evo)
+            self.add_item(button)
+
+    def _make_callback(self, evo):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user != self.user:
+                await interaction.response.send_message("This isn't your evolution!", ephemeral=True)
+                return
+            self.stop()
+            await interaction.response.defer()
+
+            # TODO: swap the pokemon in the database here
+            # TODO: Make sure to account for shiny
+            file, _ = await get_resized_gif(evo['dex_number'], self.original_is_shiny, 2)
+            embed = discord.Embed(
+                title=f"**{interaction.user.display_name}'s {self.original_pokemon_name.capitalize()}** evolved into **{evo['name'].capitalize()}**!",
+                color=discord.Color.purple(),
+            )
+            embed.set_image(url='attachment://pokemon.gif')
+
+            await interaction.channel.send(
+                file=file,
+                embed=embed
+            )
+            await interaction.delete_original_response()
+
+        return callback
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+        if self.message:
+            await self.message.edit(view=self)
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
