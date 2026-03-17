@@ -14,9 +14,9 @@ import requests
 from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from catch_view import CatchView
-from trade_view import TradeView
-from evolution_view import EvolutionView
+from views.catch_view import CatchView
+from views.trade_view import TradeView
+from views.evolution_view import EvolutionView
 
 # Init environment variables
 load_dotenv()
@@ -383,7 +383,8 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
     view.message = message
 
-@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to each server member, which they can claim with `/evolve`')
+@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to each server member, which they can claim with /evolve')
+@discord.app_commands.default_permissions(administrator=True)
 async def rarecandy(interaction: discord.Interaction, quantity: int):
     pass
 
