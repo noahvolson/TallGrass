@@ -190,7 +190,7 @@ async def init(interaction: discord.Interaction):
 
 @bot.tree.command(name='start', description='Start spawning Pokémon in this channel. Accepts an active window in military time')
 @discord.app_commands.default_permissions(administrator=True)
-async def start(interaction: discord.Interaction, start_active_hour: int | None = 0, end_active_hour: int | None = 23):
+async def start(interaction: discord.Interaction, start_active_hour: int | None = 0, end_active_hour: int | None = 24):
     if bot.spawner_task.is_running():
         await interaction.response.send_message(f'Spawning already active in {interaction.channel.name}')
         return
@@ -349,7 +349,7 @@ def get_next_evolutions(dex_number):
         node = next((child for child in node['evolves_to']), None)
 
     if not node or not node['evolves_to']:
-        return []
+        return [], current_name
 
     results = []
     for evo in node['evolves_to']:
@@ -369,9 +369,10 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
         await interaction.followup.send('Example usage: `/evolve pokemon:shiny_eevee_133`', ephemeral=True)
         return
 
-    own_offer = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, current_dex_num, current_is_shiny)
-    if not own_offer:
-        pass  # TODO: uncomment ownership check after testing
+    current_db_id = await database.get_user_pokemon_id(interaction.user.id, interaction.guild_id, current_dex_num, current_is_shiny)
+    if current_db_id is None:
+        await interaction.followup.send(f'You do not own `{pokemon}`. Make sure to include the `shiny_` prefix if the pokemon is shiny', ephemeral=True)
+        return
 
     try:
         evolutions, official_name = get_next_evolutions(current_dex_num)
@@ -391,7 +392,7 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
 
     # Branching evolution — ask the user to pick
-    view = EvolutionChoiceView(interaction.user, official_name, current_dex_num, current_is_shiny, evolutions)
+    view = EvolutionChoiceView(interaction.user, official_name, current_dex_num, current_is_shiny, current_db_id, evolutions)
     message = await interaction.followup.send(
         embed=embed,
         view=view,
@@ -400,12 +401,13 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     view.message = message
 
 class EvolutionChoiceView(discord.ui.View):
-    def __init__(self, user, original_pokemon_name, original_dex_num, original_is_shiny, evolutions):
+    def __init__(self, user, original_pokemon_name, original_dex_num, original_is_shiny, original_db_id, evolutions):
         super().__init__(timeout=30)
         self.user = user
         self.original_pokemon_name = original_pokemon_name
         self.original_dex_num = original_dex_num
         self.original_is_shiny = original_is_shiny
+        self.original_db_id = original_db_id
         self.message = None
 
         for i, evo in enumerate(evolutions):
@@ -424,11 +426,19 @@ class EvolutionChoiceView(discord.ui.View):
                 await interaction.response.send_message("This isn't your evolution!", ephemeral=True)
                 return
             self.stop()
-            await interaction.response.defer()
+            await interaction.response.defer(ephemeral=True)
 
-            # TODO: swap the pokemon in the database here
-            # TODO: Make sure to account for shiny
-            file, _ = await get_resized_gif(evo['dex_number'], self.original_is_shiny, 2)
+            # Note that the pokemon and pokemon-species endpoints return slightly different names. Use the one from pokemon
+            evo_dex_number = evo['dex_number']
+            file, name = await get_resized_gif(evo_dex_number, self.original_is_shiny, 2)
+
+            success = await database.evolve_pokemon(self.original_db_id, evo_dex_number, name)
+            if not success:
+                await interaction.followup.send(f'Evolution failed! You no longer own {self.original_pokemon_name.capitalize()}', ephemeral=True)
+                return
+
+            logger.info(f"{interaction.user} successfully evolved {self.original_pokemon_name.capitalize()} into {evo['name']}")
+
             embed = discord.Embed(
                 title=f"**{interaction.user.display_name}'s {self.original_pokemon_name.capitalize()}** evolved into **{evo['name'].capitalize()}**!",
                 color=discord.Color.purple(),

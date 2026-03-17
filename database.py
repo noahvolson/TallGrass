@@ -22,17 +22,20 @@ async def add_user_pokemon(user_id: int, guild_id: int, national_dex_number: int
         """, (user_id, guild_id, national_dex_number, name, is_shiny))
         await db.commit()
 
-async def user_has_pokemon(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> bool:
+async def get_user_pokemon_id(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> int | None:
     async with aiosqlite.connect("bot.db") as db:
         cursor = await db.execute("""
-            SELECT 1
+            SELECT id
             FROM user_pokemon
             WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
             LIMIT 1
         """, (user_id, guild_id, national_dex_number, int(is_shiny)))
         row = await cursor.fetchone()
         await cursor.close()
-        return row is not None
+        return row[0] if row else None
+
+async def user_has_pokemon(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> bool:
+    return await get_user_pokemon_id(user_id, guild_id, national_dex_number, is_shiny) is not None
 
 async def get_all_user_pokemon(user_id: int, guild_id: int):
     async with aiosqlite.connect("bot.db") as db:
@@ -100,3 +103,16 @@ async def trade_pokemon(
         """, (offer_user_id, want_id))
 
         await db.commit()
+
+async def evolve_pokemon(pokemon_id: int, new_dex_number: int, new_name: str) -> bool:
+    async with aiosqlite.connect("bot.db") as db:
+        cursor = await db.execute(
+            """
+            UPDATE user_pokemon
+            SET national_dex_number = ?, name = ?
+            WHERE id = ?
+            """,
+            (new_dex_number, new_name, pokemon_id)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
