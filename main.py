@@ -1,15 +1,12 @@
-import io
 import json
 import logging
 import os
 import random
 import re
-import subprocess
 import unicodedata
 
+import common
 import database
-import catch_view
-import trade_view
 
 import discord
 import requests
@@ -17,6 +14,9 @@ import requests
 from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+from catch_view import CatchView
+from trade_view import TradeView
+from evolution_view import EvolutionView
 
 # Init environment variables
 load_dotenv()
@@ -46,30 +46,6 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-async def get_resized_gif(national_dex_number: int, is_shiny: bool, scale: int) -> tuple[discord.File, str]:
-    response = requests.get(poke_api_url + '/pokemon/' + str(national_dex_number))
-    response.raise_for_status()
-    data = response.json()
-    sprite_url = data['sprites']['other']['showdown']['front_shiny' if is_shiny else 'front_default']
-
-    # Download GIF
-    response = requests.get(sprite_url)
-    gif_bytes = response.content
-
-    # Upscale with gifsicle
-    process = subprocess.Popen(
-        ['gifsicle', '--no-warnings', '--scale', str(scale), '--colors', '256'],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE
-    )
-    resized_bytes, _ = process.communicate(input=gif_bytes)
-
-    # Wrap bytes in BytesIO so discord.File can read it
-    resized_file = io.BytesIO(resized_bytes)
-
-    return discord.File(fp=resized_file, filename='pokemon.gif'), str.capitalize(data['name'])
-
-
 # Extend commands.Bot to schedule Pokémon spawning
 class TallGrass(commands.Bot):
     channel = None
@@ -95,13 +71,13 @@ class TallGrass(commands.Bot):
         else:
             spawned_pokemon_catch_percent = regular_chance_percent
 
-        file, spawned_pokemon_name = await get_resized_gif(spawned_pokemon_id, is_shiny, 2)
+        file, spawned_pokemon_name = await common.get_resized_gif(spawned_pokemon_id, is_shiny, 2)
 
         shiny_emoji = ' :sparkles: ' if is_shiny else ''
         embed = discord.Embed(title=f'Wild {shiny_emoji}{spawned_pokemon_name}{shiny_emoji} appears!', color=discord.Color.dark_green())
         embed.set_image(url='attachment://pokemon.gif')
 
-        view = catch_view.CatchView(
+        view = CatchView(
             log_handler=handler,
             spawned_pokemon_id=spawned_pokemon_id,
             spawned_pokemon_name=spawned_pokemon_name,
@@ -290,19 +266,19 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
         await interaction.followup.send(f'You do not own {offer_pokemon}', ephemeral=True)
         return
 
-    file, name = await get_resized_gif(offer_dex_num, offer_is_shiny, 2)
+    file, name = await common.get_resized_gif(offer_dex_num, offer_is_shiny, 2)
     shiny_emoji = ' :sparkles: ' if offer_is_shiny else ''
     offer_display_name = f'{shiny_emoji}{name}{shiny_emoji}'
     embed = discord.Embed(title=f"{interaction.user.name}'s {offer_display_name}", color=discord.Color.blue())
     embed.set_image(url='attachment://pokemon.gif')
     await interaction.channel.send(content='# Trade Offer!', embed=embed, file=file)
 
-    file, name = await get_resized_gif(want_dex_num, want_is_shiny, 2)
+    file, name = await common.get_resized_gif(want_dex_num, want_is_shiny, 2)
     shiny_emoji = ' :sparkles: ' if want_is_shiny else ''
     want_display_name = f'{shiny_emoji}{name}{shiny_emoji}'
     embed = discord.Embed(title=f'For {want_display_name}',color=discord.Color.blue())
     embed.set_image(url='attachment://pokemon.gif')
-    view = trade_view.TradeView(
+    view = TradeView(
         log_handler=handler,
         offer_user_id=interaction.user.id,
         offer_dex_num=offer_dex_num,
@@ -392,7 +368,14 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
 
     # Branching evolution — ask the user to pick
-    view = EvolutionChoiceView(interaction.user, official_name, current_dex_num, current_is_shiny, current_db_id, evolutions)
+    view = EvolutionView(
+        user=interaction.user,
+        original_pokemon_name=official_name,
+        original_dex_num=current_dex_num,
+        original_is_shiny=current_is_shiny,
+        original_db_id=current_db_id,
+        evolutions=evolutions,
+    )
     message = await interaction.followup.send(
         embed=embed,
         view=view,
@@ -400,65 +383,9 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
     view.message = message
 
-class EvolutionChoiceView(discord.ui.View):
-    def __init__(self, user, original_pokemon_name, original_dex_num, original_is_shiny, original_db_id, evolutions):
-        super().__init__(timeout=30)
-        self.user = user
-        self.original_pokemon_name = original_pokemon_name
-        self.original_dex_num = original_dex_num
-        self.original_is_shiny = original_is_shiny
-        self.original_db_id = original_db_id
-        self.message = None
-
-        for i, evo in enumerate(evolutions):
-            button = discord.ui.Button(
-                label=f"{evo['name'].capitalize()}",
-                style=discord.ButtonStyle.primary,
-                row = i // 4
-            )
-            # Capture evo in the closure
-            button.callback = self._make_callback(evo)
-            self.add_item(button)
-
-    def _make_callback(self, evo):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user != self.user:
-                await interaction.response.send_message("This isn't your evolution!", ephemeral=True)
-                return
-            self.stop()
-            await interaction.response.defer(ephemeral=True)
-
-            # Note that the pokemon and pokemon-species endpoints return slightly different names. Use the one from pokemon
-            evo_dex_number = evo['dex_number']
-            file, name = await get_resized_gif(evo_dex_number, self.original_is_shiny, 2)
-
-            success = await database.evolve_pokemon(self.original_db_id, evo_dex_number, name)
-            if not success:
-                await interaction.followup.send(f'Evolution failed! You no longer own {self.original_pokemon_name.capitalize()}', ephemeral=True)
-                return
-
-            logger.info(f"{interaction.user} successfully evolved {self.original_pokemon_name.capitalize()} into {evo['name']}")
-
-            embed = discord.Embed(
-                title=f"**{interaction.user.display_name}'s {self.original_pokemon_name.capitalize()}** evolved into **{evo['name'].capitalize()}**!",
-                color=discord.Color.purple(),
-            )
-            embed.set_image(url='attachment://pokemon.gif')
-
-            await interaction.channel.send(
-                file=file,
-                embed=embed
-            )
-            await interaction.delete_original_response()
-
-        return callback
-
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
-
-        if self.message:
-            await self.message.edit(view=self)
+@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to each server member, which they can claim with `/evolve`')
+async def rarecandy(interaction: discord.Interaction, quantity: int):
+    pass
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
