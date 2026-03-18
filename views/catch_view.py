@@ -1,5 +1,4 @@
 import asyncio
-from math import floor
 
 import database
 import logging

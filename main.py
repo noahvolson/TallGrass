@@ -36,6 +36,8 @@ shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
 min_seconds_to_spawn        = int(os.getenv('MIN_SECONDS_TO_SPAWN'))
 max_seconds_to_spawn        = int(os.getenv('MAX_SECONDS_TO_SPAWN'))
 rare_candy_emoji_id         = int(os.getenv('RARE_CANDY_EMOJI_ID'))
+soft_box_limit              = int(os.getenv('SOFT_BOX_LIMIT'))
+soft_box_penalty            = int(os.getenv('SOFT_BOX_PENALTY'))
 
 # Map of emoji_name -> emoji_id used to display a user's box
 with open('emoji_upload/emoji_map.json', 'r') as f:
@@ -251,9 +253,13 @@ async def box(interaction: discord.Interaction, user: discord.Member = None):
     candy_display = '\n### Candies\n## ' + wrapped_candies if num_candies > 0 else ''
 
     description = build_pokemon_gallery(pokemon_list) + candy_display
+    count = await database.get_pokemon_count(interaction.user.id, interaction.guild_id)
+    penalty_percent = max(count - soft_box_limit, 0) * soft_box_penalty
+
+    penalty_str = f'(-{penalty_percent}% catch!)' if penalty_percent > 0 else ''
 
     embed = discord.Embed(
-        title=f"{view_user.name.capitalize()}'s Box",
+        title=f"{view_user.name.capitalize()}'s Box {penalty_str}",
         description=description,
         color=discord.Color.purple()
     )
@@ -483,6 +489,21 @@ async def rarecandy(interaction: discord.Interaction, quantity: int):
         f"Distributed **{quantity} Rare Candy** to **{affected} members**.",
         ephemeral=True
     )
+
+@bot.tree.command(name='release', description="Release a pokemon from your box to be caught again")
+async def release(interaction: discord.Interaction, pokemon: str):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        current_dex_num, current_is_shiny = parse_pokemon(pokemon)
+    except ValueError:
+        await interaction.followup.send('Example usage: `/evolve pokemon:shiny_eevee_133`', ephemeral=True)
+        return
+
+    current_db_id = await database.get_user_pokemon_id(interaction.user.id, interaction.guild_id, current_dex_num, current_is_shiny)
+    if current_db_id is None:
+        await interaction.followup.send(f'You do not own `{pokemon}`. Make sure to include the `shiny_` prefix if the pokemon is shiny', ephemeral=True)
+        return
+
 
 
 # Now we're ready to spin up the bot!
