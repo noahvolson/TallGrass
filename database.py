@@ -114,19 +114,6 @@ async def trade_pokemon(
 
         await db.commit()
 
-async def evolve_pokemon(pokemon_id: int, new_dex_number: int, new_name: str) -> bool:
-    async with aiosqlite.connect(BOT_DB_FILE) as db:
-        cursor = await db.execute(
-            """
-            UPDATE user_pokemon
-            SET national_dex_number = ?, name = ?
-            WHERE id = ?
-            """,
-            (new_dex_number, new_name, pokemon_id)
-        )
-        await db.commit()
-        return cursor.rowcount > 0
-
 async def distribute_rare_candies(guild_id: int, quantity: int) -> int:
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         await db.execute("""
@@ -149,12 +136,22 @@ async def get_rare_candies(user_id: int, guild_id: int) -> int:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
-async def use_rare_candy(user_id: int, guild_id: int) -> bool:
+async def evolve(user_id, guild_id, pokemon_id, new_dex_number, new_name) -> bool:
     async with aiosqlite.connect(BOT_DB_FILE) as db:
-        await db.execute("""
-            UPDATE user
-            SET rare_candies = rare_candies - 1
+        cursor = await db.execute("""
+            UPDATE user SET rare_candies = rare_candies - 1
             WHERE user_id = ? AND guild_id = ? AND rare_candies > 0
         """, (user_id, guild_id))
+        if cursor.rowcount == 0:
+            return False  # not enough candies
+
+        cursor = await db.execute("""
+            UPDATE user_pokemon SET national_dex_number = ?, name = ?
+            WHERE id = ?
+        """, (new_dex_number, new_name, pokemon_id))
+        if cursor.rowcount == 0:
+            # Don't commit — both updates are rolled back automatically
+            return False
+
         await db.commit()
-        return db.total_changes > 0
+        return True
