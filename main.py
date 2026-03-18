@@ -27,8 +27,11 @@ notification_role_name      = os.getenv('NOTIFICATION_ROLE_NAME')
 pokemon_count               = int(os.getenv('POKEMON_COUNT'))
 log_level                   = int(os.getenv('LOG_LEVEL'))
 rare_chance_percent         = int(os.getenv('RARE_CHANCE_PERCENT'))
+rare_chance_scaling         = float(os.getenv('RARE_SCALING_FACTOR'))
 shiny_chance_percent        = int(os.getenv('SHINY_CHANCE_PERCENT'))
+shiny_chance_scaling        = float(os.getenv('SHINY_SCALING_FACTOR'))
 regular_chance_percent      = int(os.getenv('REGULAR_CHANCE_PERCENT'))
+regular_chance_scaling      = float(os.getenv('REGULAR_SCALING_FACTOR'))
 shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
 min_seconds_to_spawn        = int(os.getenv('MIN_SECONDS_TO_SPAWN'))
 max_seconds_to_spawn        = int(os.getenv('MAX_SECONDS_TO_SPAWN'))
@@ -68,10 +71,13 @@ class TallGrass(commands.Bot):
 
         if data['is_legendary'] or data['is_mythical']:
             spawned_pokemon_catch_percent = rare_chance_percent
+            spawned_pokemon_catch_scaling = rare_chance_scaling
         elif is_shiny:
             spawned_pokemon_catch_percent = shiny_chance_percent
+            spawned_pokemon_catch_scaling = shiny_chance_scaling
         else:
             spawned_pokemon_catch_percent = regular_chance_percent
+            spawned_pokemon_catch_scaling = regular_chance_scaling
 
         file, spawned_pokemon_name = await common.get_resized_gif(spawned_pokemon_id, is_shiny, 2)
 
@@ -84,6 +90,7 @@ class TallGrass(commands.Bot):
             spawned_pokemon_id=spawned_pokemon_id,
             spawned_pokemon_name=spawned_pokemon_name,
             spawned_pokemon_catch_percent=spawned_pokemon_catch_percent,
+            spawned_pokemon_catch_scaling=spawned_pokemon_catch_scaling,
             is_shiny=is_shiny
         )
 

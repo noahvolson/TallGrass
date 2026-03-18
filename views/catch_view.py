@@ -1,6 +1,9 @@
 import asyncio
+from math import floor
+
 import database
 import logging
+import math
 import os
 import random
 import time
@@ -16,14 +19,23 @@ log_level                   = int(os.getenv('LOG_LEVEL'))
 catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SECONDS'))
 catch_window_sec            = int(os.getenv('CATCH_WINDOW_SECONDS'))
 pokeball_emoji_id           = int(os.getenv('POKEBALL_EMOJI_ID'))
+soft_box_limit              = int(os.getenv('SOFT_BOX_LIMIT'))
+soft_box_penalty            = int(os.getenv('SOFT_BOX_PENALTY'))
 
 # Init logging to discord.log
 logger = logging.getLogger('CatchView')
 logger.setLevel(log_level)
 
+async def _calculate_user_catch_rate(attempts, base, scaling_rate, user_id, guild_id):
+    count = await database.get_pokemon_count(user_id, guild_id)
+    overflow = max(count - soft_box_limit, 0)
+
+    rate = base + round(scaling_rate * math.log1p(attempts)) - (soft_box_penalty * overflow)
+    return max(rate, 1) # Users should always have a chance, even if their box is large
+
 class CatchView(discord.ui.View):
 
-    def __init__(self, log_handler, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, is_shiny):
+    def __init__(self, log_handler, spawned_pokemon_id, spawned_pokemon_name, spawned_pokemon_catch_percent, spawned_pokemon_catch_scaling, is_shiny):
 
         if log_handler:
             logger.addHandler(log_handler)
@@ -38,13 +50,14 @@ class CatchView(discord.ui.View):
         self.spawned_pokemon_id = spawned_pokemon_id
         self.spawned_pokemon_name = spawned_pokemon_name
         self.spawned_pokemon_catch_percent = spawned_pokemon_catch_percent
+        self.spawned_pokemon_catch_scaling = spawned_pokemon_catch_scaling
         self.is_shiny = is_shiny
 
         self.flee_time = datetime.now() + timedelta(seconds=catch_window_sec)
         self._flee_task = asyncio.create_task(self._flee())
 
         super().__init__(timeout=None)
-        self.children[0].label = f'Throw a Poké Ball! ({self.spawned_pokemon_catch_percent}%)'
+        self.children[0].label = f'Throw a Poké Ball!'
         self.children[0].emoji = discord.PartialEmoji(name="pokeball", id=pokeball_emoji_id)
 
     async def _flee(self):
@@ -97,8 +110,17 @@ class CatchView(discord.ui.View):
 
             # Attempt to catch
             roll = random.randint(1, 100)
-            success = roll <= self.spawned_pokemon_catch_percent
-            logger.debug(f'{interaction.user.display_name} Rolled: {roll}, Required: {self.spawned_pokemon_catch_percent} or lower')
+            current_rate = await _calculate_user_catch_rate(
+                attempts=self.attempts[user_id],
+                base=self.spawned_pokemon_catch_percent,
+                scaling_rate=self.spawned_pokemon_catch_scaling,
+                user_id=user_id,
+                guild_id=interaction.guild.id
+            )
+
+            success = roll <= current_rate
+            logger.debug(f'{interaction.user.display_name} Rolled: {roll}, Required: {current_rate} or lower')
+            self.attempts[user_id] += 1
 
             if success:
                 try:
@@ -126,7 +148,6 @@ class CatchView(discord.ui.View):
                 shiny_emoji = ' :sparkles: ' if self.is_shiny else ''
 
                 # Collect stats for this Pokémon
-                self.attempts[user_id] += 1
                 total_attempts = sum(self.attempts.values())
                 num_users = len(self.attempts)
 
@@ -141,13 +162,13 @@ class CatchView(discord.ui.View):
 
                 message_string = (
                     f"### Gotcha! {shiny_emoji}{self.spawned_pokemon_name}{shiny_emoji} was caught by "
-                    f"{interaction.user.display_name}!{attempts_summary}"
+                    f"{interaction.user.display_name}, beating the {current_rate}% odds!{attempts_summary}"
                 )
 
                 await interaction.followup.send(message_string)
                 logger.info(f"{'Shiny ' if self.is_shiny else ''}{self.spawned_pokemon_name} was caught by {interaction.user.display_name}")
             else:
-                message_string = 'Oh no! The Pokémon broke free!'
+                message_string = f'Oh no! The Pokémon broke free! You rolled {roll}. Required {current_rate} or lower.'
                 if last_msg:
                     sent_msg = await interaction.followup.send(message_string, ephemeral=True)
                 else:
@@ -156,4 +177,3 @@ class CatchView(discord.ui.View):
 
                 # Store the time and message object
                 self.cooldowns[user_id] = (now, sent_msg)
-                self.attempts[user_id] += 1
