@@ -46,6 +46,11 @@ class EvolutionView(discord.ui.View):
             evo_dex_number = evo['dex_number']
             file, name = await common.get_resized_gif(evo_dex_number, self.original_is_shiny, 2)
 
+            success = await database.use_rare_candy(interaction.user.id, interaction.guild_id)
+            if not success:
+                await interaction.followup.send(f'You do not have enough Rare Candies to complete the evolution', ephemeral=True)
+                return
+
             success = await database.evolve_pokemon(self.original_db_id, evo_dex_number, name)
             if not success:
                 await interaction.followup.send(f'Evolution failed! You no longer own {self.original_pokemon_name.capitalize()}', ephemeral=True)

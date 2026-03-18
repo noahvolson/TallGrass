@@ -60,6 +60,11 @@ Manually upload `emoji_upload/manually_fixed/pokeball.png` to the developer port
 echo -e "\nPOKEBALL_EMOJI_ID=YOUR_POKEBALL_EMOJI_ID" >> .env
 ```
 
+Manually upload `emoji_upload/manually_fixed/rare_candy.png` to the developer portal, then add it to your .env
+```
+echo -e "\nRARE_CANDY_EMOJI_ID=YOUR_RARE_CANDY_EMOJI_ID" >> .env
+```
+
 Tweak the environment variables in .env to your liking
 
 Run the bot

@@ -31,6 +31,7 @@ regular_chance_percent      = int(os.getenv('REGULAR_CHANCE_PERCENT'))
 shiny_spawn_one_in          = int(os.getenv('SHINY_SPAWN_ONE_IN'))
 min_seconds_to_spawn        = int(os.getenv('MIN_SECONDS_TO_SPAWN'))
 max_seconds_to_spawn        = int(os.getenv('MAX_SECONDS_TO_SPAWN'))
+rare_candy_emoji_id         = int(os.getenv('RARE_CANDY_EMOJI_ID'))
 
 # Map of emoji_name -> emoji_id used to display a user's box
 with open('emoji_upload/emoji_map.json', 'r') as f:
@@ -152,15 +153,12 @@ async def init(interaction: discord.Interaction):
         return
 
     existing = discord.utils.get(interaction.guild.roles, name=notification_role_name)
-    if existing:
-        await interaction.response.send_message('A role called grass-watchers already exists in this server.')
-        return
-
-    await interaction.guild.create_role(
-        name='grass-watchers',
-        mentionable=True,
-        reason="Created for Pokémon spawn notifications"
-    )
+    if not existing:
+        await interaction.guild.create_role(
+            name='grass-watchers',
+            mentionable=True,
+            reason="Created for Pokémon spawn notifications"
+        )
 
     await interaction.response.send_message(f'Tallgrass initialized!')
 
@@ -231,13 +229,24 @@ def build_pokemon_gallery(pokemon_list: list, num_columns: int = 4) -> str:
     rows = [emojis[i:i+num_columns] for i in range(0, len(emojis), num_columns)]
     return '\n\n'.join('# ' + '\u2000\u2000'.join(row) for row in rows)
 
+def build_candy_string(count: int) -> str:
+    emojis = [f"<:rare_candy:{rare_candy_emoji_id}>"] * count
+    return "\n## ".join("".join(emojis[i:i+7]) for i in range(0, count, 7))
+
 @bot.tree.command(name='box', description='View your pokemon collection')
 async def box(interaction: discord.Interaction, user: discord.Member = None):
     view_user = user if user else interaction.user
     pokemon_list = await database.get_all_user_pokemon(view_user.id, interaction.guild_id)
+    num_candies = await database.get_rare_candies(view_user.id, interaction.guild_id)
+    wrapped_candies = build_candy_string(num_candies)
+
+    candy_display = '\n### Candies\n## ' + wrapped_candies if num_candies > 0 else ''
+
+    description = build_pokemon_gallery(pokemon_list) + candy_display
+
     embed = discord.Embed(
-        title=f"{view_user.name}'s Box",
-        description=build_pokemon_gallery(pokemon_list),
+        title=f"{view_user.name.capitalize()}'s Box",
+        description=description,
         color=discord.Color.purple()
     )
     embed.set_thumbnail(url=view_user.display_avatar.url)
@@ -361,9 +370,11 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
         return
 
     formatted_pokemon = [{'national_dex_number': e['dex_number'], 'is_shiny': current_is_shiny, 'name': e['name']} for e in evolutions]
+    description = build_pokemon_gallery(formatted_pokemon) + '\n### Cost:\n## ' + f"<:rare_candy:{rare_candy_emoji_id}>"
+
     embed = discord.Embed(
         title=f"Please confirm the evolution for {official_name.capitalize()}",
-        description=build_pokemon_gallery(formatted_pokemon),
+        description=description,
         color=discord.Color.purple()
     )
 
@@ -383,10 +394,25 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
     view.message = message
 
-@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to each server member, which they can claim with /evolve')
+@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to each server member, which can be claimed with /evolve')
 @discord.app_commands.default_permissions(administrator=True)
 async def rarecandy(interaction: discord.Interaction, quantity: int):
-    pass
+    if quantity <= 0:
+        await interaction.response.send_message("Quantity must be a positive number.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    affected = await database.distribute_rare_candies(
+        guild_id=interaction.guild.id,
+        quantity=quantity
+    )
+
+    await interaction.followup.send(
+        f"Distributed **{quantity} Rare Candy** to **{affected} members**.",
+        ephemeral=True
+    )
+
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)

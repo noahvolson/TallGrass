@@ -1,7 +1,9 @@
 import aiosqlite
 
+BOT_DB_FILE = "bot.db"
+
 async def init_db():
-    async with aiosqlite.connect("bot.db") as db:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS user_pokemon (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,10 +14,18 @@ async def init_db():
                 is_shiny BOOLEAN NOT NULL
             );
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user (
+                user_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                rare_candies INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, guild_id)
+            );
+        """)
         await db.commit()
 
 async def add_user_pokemon(user_id: int, guild_id: int, national_dex_number: int, name: str, is_shiny: bool):
-    async with aiosqlite.connect("bot.db") as db:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
         await db.execute("""
             INSERT INTO user_pokemon (user_id, guild_id, national_dex_number, name, is_shiny)
             VALUES (?, ?, ?, ?, ?)
@@ -23,7 +33,7 @@ async def add_user_pokemon(user_id: int, guild_id: int, national_dex_number: int
         await db.commit()
 
 async def get_user_pokemon_id(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> int | None:
-    async with aiosqlite.connect("bot.db") as db:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
         cursor = await db.execute("""
             SELECT id
             FROM user_pokemon
@@ -38,7 +48,7 @@ async def user_has_pokemon(user_id: int, guild_id: int, national_dex_number: int
     return await get_user_pokemon_id(user_id, guild_id, national_dex_number, is_shiny) is not None
 
 async def get_all_user_pokemon(user_id: int, guild_id: int):
-    async with aiosqlite.connect("bot.db") as db:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
         cursor = await db.execute("""
             SELECT id, national_dex_number, name, is_shiny
             FROM user_pokemon
@@ -65,7 +75,7 @@ async def trade_pokemon(
         offer_is_shiny: bool,
         want_is_shiny: bool
 ):
-    async with aiosqlite.connect("bot.db") as db:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
         # Verify from_user owns the offered Pokémon
         cursor = await db.execute("""
             SELECT id FROM user_pokemon
@@ -105,7 +115,7 @@ async def trade_pokemon(
         await db.commit()
 
 async def evolve_pokemon(pokemon_id: int, new_dex_number: int, new_name: str) -> bool:
-    async with aiosqlite.connect("bot.db") as db:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
         cursor = await db.execute(
             """
             UPDATE user_pokemon
@@ -116,3 +126,35 @@ async def evolve_pokemon(pokemon_id: int, new_dex_number: int, new_name: str) ->
         )
         await db.commit()
         return cursor.rowcount > 0
+
+async def distribute_rare_candies(guild_id: int, quantity: int) -> int:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO user (user_id, guild_id, rare_candies)
+            SELECT DISTINCT user_id, guild_id, ?
+            FROM user_pokemon
+            WHERE guild_id = ?
+            ON CONFLICT (user_id, guild_id)
+            DO UPDATE SET rare_candies = rare_candies + excluded.rare_candies
+        """, (quantity, guild_id))
+        await db.commit()
+        return db.total_changes
+
+async def get_rare_candies(user_id: int, guild_id: int) -> int:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        async with db.execute("""
+            SELECT rare_candies FROM user
+            WHERE user_id = ? AND guild_id = ?
+        """, (user_id, guild_id)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+async def use_rare_candy(user_id: int, guild_id: int) -> bool:
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        await db.execute("""
+            UPDATE user
+            SET rare_candies = rare_candies - 1
+            WHERE user_id = ? AND guild_id = ? AND rare_candies > 0
+        """, (user_id, guild_id))
+        await db.commit()
+        return db.total_changes > 0
