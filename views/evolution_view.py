@@ -11,7 +11,7 @@ load_dotenv()
 log_level = int(os.getenv('LOG_LEVEL'))
 
 # Init logging to discord.log
-logger = logging.getLogger('CatchView')
+logger = logging.getLogger('EvolutionView')
 logger.setLevel(log_level)
 
 class EvolutionView(discord.ui.View):

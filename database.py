@@ -114,6 +114,58 @@ async def trade_pokemon(
 
         await db.commit()
 
+async def trade_pokemon_multi(
+        guild_id: int,
+        offer_user_id: int,
+        want_user_id: int,
+        offer_pokemon: list[tuple[int, bool]],
+        want_pokemon: list[tuple[int, bool]],
+):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        await db.execute("BEGIN")
+        try:
+            offer_ids = []
+            for dex_num, is_shiny in offer_pokemon:
+                cursor = await db.execute("""
+                    SELECT id FROM user_pokemon
+                    WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
+                    LIMIT 1
+                """, (offer_user_id, guild_id, dex_num, is_shiny))
+                row = await cursor.fetchone()
+                await cursor.close()
+                if row is None:
+                    raise ValueError(f"The offering user does not own Pokémon #{dex_num} (shiny={is_shiny}).")
+                offer_ids.append(row[0])
+
+            want_ids = []
+            for dex_num, is_shiny in want_pokemon:
+                cursor = await db.execute("""
+                    SELECT id FROM user_pokemon
+                    WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
+                    LIMIT 1
+                """, (want_user_id, guild_id, dex_num, is_shiny))
+                row = await cursor.fetchone()
+                await cursor.close()
+                if row is None:
+                    raise ValueError(f"The receiving user does not own Pokémon #{dex_num} (shiny={is_shiny}).")
+                want_ids.append(row[0])
+
+            for pokemon_id in offer_ids:
+                await db.execute("""
+                    UPDATE user_pokemon SET user_id = ? WHERE id = ?
+                """, (want_user_id, pokemon_id))
+
+            for pokemon_id in want_ids:
+                await db.execute("""
+                    UPDATE user_pokemon SET user_id = ? WHERE id = ?
+                """, (offer_user_id, pokemon_id))
+
+            await db.commit()
+
+        except Exception:
+            await db.rollback()
+            raise
+
 async def distribute_rare_candies(guild_id: int, quantity: int) -> int:
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         await db.execute("""

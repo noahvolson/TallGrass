@@ -16,6 +16,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from views.catch_view import CatchView
 from views.trade_view import TradeView
+from views.multi_trade_view import MultiTradeView
 from views.evolution_view import EvolutionView
 
 # Init environment variables
@@ -278,7 +279,7 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
     file, name = await common.get_resized_gif(offer_dex_num, offer_is_shiny, 2)
     shiny_emoji = ' :sparkles: ' if offer_is_shiny else ''
     offer_display_name = f'{shiny_emoji}{name}{shiny_emoji}'
-    embed = discord.Embed(title=f"{interaction.user.name}'s {offer_display_name}", color=discord.Color.blue())
+    embed = discord.Embed(title=f"{interaction.user.name.capitalize()}'s {offer_display_name}", color=discord.Color.blue())
     embed.set_image(url='attachment://pokemon.gif')
     await interaction.channel.send(content='# Trade Offer!', embed=embed, file=file)
 
@@ -302,6 +303,69 @@ async def trade(interaction: discord.Interaction, offer_pokemon: str, want_pokem
 
     await interaction.delete_original_response()
     logger.info(f'{interaction.user.id} posted a trade offer: {offer_pokemon} for {want_pokemon}')
+
+@bot.tree.command(name='multitrade', description='Post a trade offer with more than one offered and/or more than one wanted Pokémon')
+async def multitrade(interaction: discord.Interaction, offer_csv_list: str, want_csv_list: str):
+    await interaction.response.defer(ephemeral=True)
+
+    offer_raw = [s.strip() for s in offer_csv_list.split(',')]
+    want_raw  = [s.strip() for s in want_csv_list.split(',')]
+
+    try:
+        offer_parsed = [parse_pokemon(s) for s in offer_raw]  # list of (dex_num, is_shiny)
+        want_parsed  = [parse_pokemon(s) for s in want_raw]
+    except ValueError:
+        await interaction.followup.send(
+            'Example usage: `/multitrade offer_csv_list:raichu_26,shiny_ninetales_38 want_csv_list:pikachu_25,mew_151`',
+            ephemeral=True
+        )
+        return
+
+    # Verify the user can offer these Pokémon
+    for raw, (dex_num, is_shiny) in zip(offer_raw, offer_parsed):
+        owns = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, dex_num, is_shiny)
+        if not owns:
+            await interaction.followup.send(f'You do not own {raw}', ephemeral=True)
+            return
+
+    # Resolve names for gallery display
+    def resolve_pokemon_list(parsed_list):
+        result = []
+        for dex, shiny in parsed_list:
+            result.append({'national_dex_number': dex, 'is_shiny': shiny, 'name': 'number'}) # Note this is a placeholder name for the emoji
+        return result
+
+    offer_pokemon_list = resolve_pokemon_list(offer_parsed)
+    want_pokemon_list  = resolve_pokemon_list(want_parsed)
+
+    offer_gallery = build_pokemon_gallery(offer_pokemon_list)
+    want_gallery  = build_pokemon_gallery(want_pokemon_list)
+
+    view = MultiTradeView(
+        log_handler=handler,
+        offer_user_id=interaction.user.id,
+        offer_pokemon_list=offer_pokemon_list,
+        want_pokemon_list=want_pokemon_list,
+        offer_gallery=offer_gallery,
+        want_gallery=want_gallery,
+    )
+    embed = discord.Embed(
+        description=(
+            f'**{interaction.user.name.capitalize()} offers:**\n{offer_gallery}\n\n'
+            f'**For:**\n{want_gallery}'
+        ),
+        color=discord.Color.blue())
+
+    message = await interaction.channel.send(
+        content=f'# Trade Offer!',
+        embed=embed,
+        view=view
+    )
+    view.message = message
+
+    await interaction.delete_original_response()
+    logger.info(f'{interaction.user.id} posted a multitrade: {offer_csv_list} for {want_csv_list}')
+
 
 @bot.tree.command(name='notifyme', description="Adds or removes the notification role from your user")
 async def notifyme(interaction: discord.Interaction, enable: bool):
