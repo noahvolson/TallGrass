@@ -113,6 +113,9 @@ class CatchView(discord.ui.View):
                     logger.error(f"Failed to add {'shiny ' if self.is_shiny else ''}{self.spawned_pokemon_name} to user {interaction.user.id}: {e}")
                     return
 
+                # Update the cache
+                database.increment_pokemon_count(interaction.user.id, interaction.guild_id)
+
                 self.claimed = True
                 button.disabled = True
                 if last_msg:

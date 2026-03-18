@@ -2,6 +2,9 @@ import aiosqlite
 
 BOT_DB_FILE = "bot.db"
 
+#
+# Set up table structure
+#
 async def init_db():
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         await db.execute("""
@@ -24,6 +27,38 @@ async def init_db():
         """)
         await db.commit()
 
+#
+# Catch rate depends on caught count. To avoid spamming the db I set up a cache
+#
+_pokemon_count_cache: dict[tuple[int, int], int] = {} # (user_id, guild_id) -> pokemon_count
+
+async def get_pokemon_count(user_id: int, guild_id: int) -> int:
+    key = (user_id, guild_id)
+
+    if key not in _pokemon_count_cache:
+        # Cache miss — query DB once and populate
+        async with aiosqlite.connect(BOT_DB_FILE) as db:
+            async with db.execute("""
+                SELECT COUNT(*) FROM user_pokemon WHERE user_id = ? AND guild_id = ?
+                """, (user_id, guild_id)
+            ) as cursor:
+                row = await cursor.fetchone()
+                _pokemon_count_cache[key] = row[0] if row else 0
+
+    return _pokemon_count_cache[key]
+
+def invalidate_pokemon_count(user_id: int, guild_id: int) -> None:
+    _pokemon_count_cache.pop((user_id, guild_id), None)
+
+def increment_pokemon_count(user_id: int, guild_id: int) -> None:
+    key = (user_id, guild_id)
+    if key in _pokemon_count_cache:
+        _pokemon_count_cache[key] += 1
+    # else get_pokemon_count will set the count the next time it's called
+
+#
+# Database utility functions
+#
 async def add_user_pokemon(user_id: int, guild_id: int, national_dex_number: int, name: str, is_shiny: bool):
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         await db.execute("""
