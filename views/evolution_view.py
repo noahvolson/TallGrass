@@ -39,7 +39,7 @@ class EvolutionView(discord.ui.View):
             if interaction.user != self.user:
                 await interaction.response.send_message("This isn't your evolution!", ephemeral=True)
                 return
-            self.stop()
+
             await interaction.response.defer(ephemeral=True)
 
             # Note that the pokemon and pokemon-species endpoints return slightly different names. Use the one from pokemon
@@ -60,6 +60,7 @@ class EvolutionView(discord.ui.View):
                 )
                 return
 
+            self.stop()
             logger.info(f"{interaction.user} successfully evolved {self.original_pokemon_name.capitalize()} into {evo['name']}")
 
             embed = discord.Embed(
