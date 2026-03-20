@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from views.catch_view import CatchView
+from views.release_view import ReleaseView
 from views.trade_view import TradeView
 from views.multi_trade_view import MultiTradeView
 from views.evolution_view import EvolutionView
@@ -59,13 +60,13 @@ class TallGrass(commands.Bot):
     start_active_hour: int
     end_active_hour: int
 
-    async def spawn_pokemon(self):
+    async def spawn_pokemon(self, dex_number: int | None = None, is_shiny: bool | None = None):
 
         # Roll for shiny
-        is_shiny = random.randint(1, shiny_spawn_one_in) == 1
+        is_shiny = random.randint(1, shiny_spawn_one_in) == 1 if is_shiny is None else is_shiny
 
         # Pick a random Pokémon
-        spawned_pokemon_id = random.randint(1, pokemon_count)
+        spawned_pokemon_id = random.randint(1, pokemon_count) if dex_number is None else dex_number
 
         # Determine catch percent from the species endpoint
         response = requests.get(poke_api_url + '/pokemon-species/' + str(spawned_pokemon_id))
@@ -102,23 +103,23 @@ class TallGrass(commands.Bot):
         message = await self.channel.send(content=f'<@&{role.id}>', embed=embed, file=file, view=view)
         view.message = message
 
+    def in_downtime(self, now: datetime):
+        if self.start_active_hour <= self.end_active_hour:
+            # Active window is a normal range e.g. 8–22
+            return now.hour < self.start_active_hour or now.hour >= self.end_active_hour
+        else:
+            # Active window wraps midnight e.g. 22–6
+            return self.end_active_hour <= now.hour < self.start_active_hour
+
     @tasks.loop(seconds=1) # Updated on each task run
     async def spawner_task(self):
         if not self.channel:
             return
 
         seconds = random.randint(min_seconds_to_spawn, max_seconds_to_spawn)
-
         now = datetime.now()
 
-        if self.start_active_hour <= self.end_active_hour:
-            # Active window is a normal range e.g. 8–22
-            in_downtime = now.hour < self.start_active_hour or now.hour >= self.end_active_hour
-        else:
-            # Active window wraps midnight e.g. 22–6
-            in_downtime = self.end_active_hour <= now.hour < self.start_active_hour
-
-        if in_downtime:
+        if self.in_downtime(now):
             next_active = now.replace(hour=self.start_active_hour, minute=0, second=0, microsecond=0)
 
             if next_active < now:
@@ -494,17 +495,48 @@ async def rarecandy(interaction: discord.Interaction, quantity: int):
 async def release(interaction: discord.Interaction, pokemon: str):
     await interaction.response.defer(ephemeral=True)
     try:
-        current_dex_num, current_is_shiny = parse_pokemon(pokemon)
+        dex_num, is_shiny = parse_pokemon(pokemon)
     except ValueError:
-        await interaction.followup.send('Example usage: `/evolve pokemon:shiny_eevee_133`', ephemeral=True)
+        await interaction.followup.send('Example usage: `/release pokemon:shiny_eevee_133`', ephemeral=True)
         return
 
-    current_db_id = await database.get_user_pokemon_id(interaction.user.id, interaction.guild_id, current_dex_num, current_is_shiny)
-    if current_db_id is None:
+    if bot.channel is None:
+        await interaction.followup.send(f'`/release` cannot be completed while spawning is inactive', ephemeral=True)
+        return
+
+    if bot.in_downtime(datetime.now()):
+        await interaction.followup.send(f'`/release` cannot be completed during spawn downtime', ephemeral=True)
+        return
+
+    has_pokemon = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, dex_num, is_shiny)
+    if not has_pokemon:
         await interaction.followup.send(f'You do not own `{pokemon}`. Make sure to include the `shiny_` prefix if the pokemon is shiny', ephemeral=True)
         return
 
+    file, name = await common.get_resized_gif(dex_num, is_shiny, 2)
 
+    # send view here
+    view = ReleaseView(
+        user=interaction.user,
+        pokemon_name=name,
+        dex_number=dex_num,
+        is_shiny=is_shiny,
+        spawn_callback=lambda: bot.spawn_pokemon(dex_num, is_shiny)
+    )
+    embed = discord.Embed(
+        title=f"Are you sure you want to release {name}?",
+        color=discord.Color.red(),
+    )
+    embed.set_image(url='attachment://pokemon.gif')
+
+    message = await interaction.followup.send(
+        file=file,
+        embed=embed,
+        view=view,
+        ephemeral=True
+    )
+
+    view.message = message
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)

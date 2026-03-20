@@ -161,7 +161,7 @@ class CatchView(discord.ui.View):
 
                 message_string = (
                     f"### Gotcha! {shiny_emoji}{self.spawned_pokemon_name}{shiny_emoji} was caught by "
-                    f"{interaction.user.display_name}, beating the {current_rate}% odds!{attempts_summary}"
+                    f"{interaction.user.display_name}, beating {current_rate}% odds!{attempts_summary}"
                 )
 
                 await interaction.followup.send(message_string)

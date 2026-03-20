@@ -67,6 +67,19 @@ async def add_user_pokemon(user_id: int, guild_id: int, national_dex_number: int
         """, (user_id, guild_id, national_dex_number, name, is_shiny))
         await db.commit()
 
+async def remove_user_pokemon(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        await db.execute("""
+            DELETE FROM user_pokemon
+            WHERE rowid = (
+                SELECT rowid FROM user_pokemon
+                WHERE user_id = ? AND guild_id = ? AND national_dex_number = ? AND is_shiny = ?
+                LIMIT 1
+            )
+        """, (user_id, guild_id, national_dex_number, is_shiny))
+        await db.commit()
+        return db.total_changes > 0
+
 async def get_user_pokemon_id(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> int | None:
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         cursor = await db.execute("""
