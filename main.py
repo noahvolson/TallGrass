@@ -8,6 +8,7 @@ import unicodedata
 import common
 import database
 
+import asyncio
 import discord
 import requests
 
@@ -39,6 +40,7 @@ max_seconds_to_spawn        = int(os.getenv('MAX_SECONDS_TO_SPAWN'))
 rare_candy_emoji_id         = int(os.getenv('RARE_CANDY_EMOJI_ID'))
 soft_box_limit              = int(os.getenv('SOFT_BOX_LIMIT'))
 soft_box_penalty            = int(os.getenv('SOFT_BOX_PENALTY'))
+sec_before_spawn_notify     = int(os.getenv('SEC_BEFORE_SPAWN_NOTIFY'))
 
 # Map of emoji_name -> emoji_id used to display a user's box
 with open('emoji_upload/emoji_map.json', 'r') as f:
@@ -97,10 +99,15 @@ class TallGrass(commands.Bot):
             is_shiny=is_shiny
         )
 
-        logger.info(f"Spawning {'shiny ' if is_shiny else ''}{spawned_pokemon_name} in channel: {self.channel.name}")
-
         role = discord.utils.get(self.channel.guild.roles, name=notification_role_name)
-        message = await self.channel.send(content=f'<@&{role.id}>', embed=embed, file=file, view=view)
+        warning_message = await self.channel.send(
+            content=f'<@&{role.id}> The grass is rustling! A wild Pokémon will appear in **{sec_before_spawn_notify} seconds**!'
+        )
+        await asyncio.sleep(sec_before_spawn_notify)
+        await warning_message.delete()
+
+        logger.info(f"Spawning {'shiny ' if is_shiny else ''}{spawned_pokemon_name} in channel: {self.channel.name}")
+        message = await self.channel.send(embed=embed, file=file, view=view)
         view.message = message
 
     def in_downtime(self, now: datetime):
