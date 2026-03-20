@@ -4,11 +4,6 @@ A Discord bot to spawn collectible Pokemon on your server
 ![Wild Nidoqueen appears](assets/spawn.png)
 
 ## Commands
-`/init` [ADMIN ONLY] Set up the database for TallGrass
-
-`/start` [ADMIN ONLY] Start spawning Pokémon in this channel. Optionally accepts an active window in military time
-
-`/stop` [ADMIN ONLY] Stop spawning Pokémon in this channel
 
 `/box` View your Pokémon collection. Optionally accepts another user to view
 
@@ -16,13 +11,19 @@ A Discord bot to spawn collectible Pokemon on your server
 
 `/multitrade` Post a trade offer with more than one offered and/or more than one wanted Pokémon
 
-`/rarecandy` Distributes Rare Candy to each server member, which can be claimed with `/evolve`
-
 `/evolve` Uses a rare candy to evolve a Pokémon once
 
 `/release` Release a Pokémon from your box to be caught again
 
 `/notifyme` Add a role which will be pinged when a Pokémon spawns
+
+`/init` [ADMIN ONLY] Set up the database for TallGrass
+
+`/start` [ADMIN ONLY] Start spawning Pokémon in this channel. Optionally accepts an active window in military time
+
+`/stop` [ADMIN ONLY] Stop spawning Pokémon in this channel
+
+`/rarecandy` [ADMIN ONLY] Distributes Rare Candy to each server member, which can be claimed with `/evolve`
 
 ## Setup
 
