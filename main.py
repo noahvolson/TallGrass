@@ -261,7 +261,7 @@ async def box(interaction: discord.Interaction, user: discord.Member = None):
     candy_display = '\n### Candies\n## ' + wrapped_candies if num_candies > 0 else ''
 
     description = build_pokemon_gallery(pokemon_list) + candy_display
-    count = await database.get_pokemon_count(interaction.user.id, interaction.guild_id)
+    count = await database.get_pokemon_count(view_user.id, interaction.guild_id)
     penalty_percent = max(count - soft_box_limit, 0) * soft_box_penalty
 
     penalty_str = f'(-{penalty_percent}% catch!)' if penalty_percent > 0 else ''
