@@ -14,6 +14,16 @@ A Discord bot to spawn collectible Pokemon on your server
 
 `/trade` Post a trade offer
 
+`/multitrade` Post a trade offer with more than one offered and/or more than one wanted Pokémon
+
+`/rarecandy` Distributes Rare Candy to each server member, which can be claimed with `/evolve`
+
+`/evolve` Uses a rare candy to evolve a Pokémon once
+
+`/release` Release a Pokémon from your box to be caught again
+
+`/notifyme` Add a role which will be pinged when a Pokémon spawns
+
 ## Setup
 
 Requires discord scopes `bot` and `applications.commands`
