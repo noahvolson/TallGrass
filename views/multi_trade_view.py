@@ -81,8 +81,9 @@ class MultiTradeView(discord.ui.View):
                     [(p['national_dex_number'], p['is_shiny']) for p in self.want_pokemon_list],
                 )
 
-                # Count has been updated, invalidate the cache
+                # Count for both users has been updated, invalidate the cache
                 database.invalidate_pokemon_count(interaction.user.id, interaction.guild_id)
+                database.invalidate_pokemon_count(self.offer_user_id, interaction.user.id)
 
                 logger.info(
                     f'{interaction.user.id} accepted multitrade from {self.offer_user_id}: '
