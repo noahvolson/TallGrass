@@ -47,6 +47,8 @@ class ReleaseView(discord.ui.View):
             )
             return
 
+        database.invalidate_pokemon_count(interaction.user.id, interaction.guild_id)
+
         self.stop()
         logger.info(f"{interaction.user} successfully released {self.pokemon_name.capitalize()}")
 
