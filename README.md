@@ -25,7 +25,7 @@ A Discord bot to spawn collectible Pokemon on your server
 
 `/stop` [ADMIN ONLY] Stop spawning Pokémon in this channel
 
-`/rarecandy` [ADMIN ONLY] Distributes Rare Candy to each server member, which can be claimed with `/evolve`
+`/rarecandy` [ADMIN ONLY] Distributes Rare Candy to all users with at least one Pokémon or a single user by passing the `user` param
 
 ## Setup
 

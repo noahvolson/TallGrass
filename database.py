@@ -214,16 +214,20 @@ async def trade_pokemon_multi(
             await db.rollback()
             raise
 
-async def distribute_rare_candies(guild_id: int, quantity: int) -> int:
+async def distribute_rare_candies(guild_id: int, quantity: int, user_id: int = None) -> int:
     async with aiosqlite.connect(BOT_DB_FILE) as db:
-        await db.execute("""
+        user_filter = 'AND user_id = ?' if user_id is not None else ''
+        params = (quantity, guild_id, user_id) if user_id is not None else (quantity, guild_id)
+
+        await db.execute(f"""
             INSERT INTO user (user_id, guild_id, rare_candies)
             SELECT DISTINCT user_id, guild_id, ?
             FROM user_pokemon
             WHERE guild_id = ?
+            {user_filter}
             ON CONFLICT (user_id, guild_id)
             DO UPDATE SET rare_candies = rare_candies + excluded.rare_candies
-        """, (quantity, guild_id))
+        """, params)
         await db.commit()
         return db.total_changes
 

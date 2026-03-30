@@ -479,9 +479,9 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
     view.message = message
 
-@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to each server member, which can be claimed with /evolve')
+@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to all users with at least one Pokémon or a single user by passing the `user` param')
 @discord.app_commands.default_permissions(administrator=True)
-async def rarecandy(interaction: discord.Interaction, quantity: int):
+async def rarecandy(interaction: discord.Interaction, quantity: int, user: discord.Member = None):
     if quantity <= 0:
         await interaction.response.send_message("Quantity must be a positive number.", ephemeral=True)
         return
@@ -490,7 +490,8 @@ async def rarecandy(interaction: discord.Interaction, quantity: int):
 
     affected = await database.distribute_rare_candies(
         guild_id=interaction.guild.id,
-        quantity=quantity
+        quantity=quantity,
+        user_id=user.id if user is not None else None,
     )
 
     await interaction.followup.send(
