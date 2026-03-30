@@ -17,6 +17,8 @@ A Discord bot to spawn collectible Pokemon on your server
 
 `/notifyme` Add a role which will be pinged when a Pokémon spawns
 
+`/exportbox` Export your Pokémon collection in a standard text format
+
 `/init` [ADMIN ONLY] Set up the database for TallGrass
 
 `/start` [ADMIN ONLY] Start spawning Pokémon in this channel. Optionally accepts an active window in military time

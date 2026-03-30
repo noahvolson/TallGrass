@@ -545,5 +545,23 @@ async def release(interaction: discord.Interaction, pokemon: str):
 
     view.message = message
 
+def build_export_box(pokemon_list: list):
+    result = []
+    for p in pokemon_list:
+        result.append(p['name'])
+        result.append("Shiny: Yes" if p['is_shiny'] else "Shiny: No")
+        result.append("Level: 50")
+        result.append("")
+    return "\n".join(result)
+
+@bot.tree.command(name='exportbox', description='Export your pokemon collection in a standard text format')
+async def exportbox(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    view_user = interaction.user
+    pokemon_list = await database.get_all_user_pokemon(view_user.id, interaction.guild_id)
+    export_text = '```\n' + build_export_box(pokemon_list) + '```'
+    await interaction.followup.send(export_text, ephemeral=True)
+    logger.debug(f'{interaction.user.id} used export_box')
+
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
