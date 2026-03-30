@@ -479,7 +479,7 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
     )
     view.message = message
 
-@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to all users with at least one Pokémon or a single user by passing the `user` param')
+@bot.tree.command(name='rarecandy', description='Distributes Rare Candy to all users with 1+ Pokémon or a single user by passing the `user` param')
 @discord.app_commands.default_permissions(administrator=True)
 async def rarecandy(interaction: discord.Interaction, quantity: int, user: discord.Member = None):
     if quantity <= 0:
