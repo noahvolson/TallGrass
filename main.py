@@ -39,7 +39,7 @@ min_seconds_to_spawn        = int(os.getenv('MIN_SECONDS_TO_SPAWN'))
 max_seconds_to_spawn        = int(os.getenv('MAX_SECONDS_TO_SPAWN'))
 rare_candy_emoji_id         = int(os.getenv('RARE_CANDY_EMOJI_ID'))
 soft_box_limit              = int(os.getenv('SOFT_BOX_LIMIT'))
-soft_box_penalty            = int(os.getenv('SOFT_BOX_PENALTY'))
+soft_box_penalty            = float(os.getenv('SOFT_BOX_PENALTY'))
 sec_before_spawn_notify     = int(os.getenv('SEC_BEFORE_SPAWN_NOTIFY'))
 
 # Map of emoji_name -> emoji_id used to display a user's box

@@ -19,7 +19,7 @@ catch_cooldown_sec          = int(os.getenv('CATCH_COOLDOWN_SECONDS'))
 catch_window_sec            = int(os.getenv('CATCH_WINDOW_SECONDS'))
 pokeball_emoji_id           = int(os.getenv('POKEBALL_EMOJI_ID'))
 soft_box_limit              = int(os.getenv('SOFT_BOX_LIMIT'))
-soft_box_penalty            = int(os.getenv('SOFT_BOX_PENALTY'))
+soft_box_penalty            = float(os.getenv('SOFT_BOX_PENALTY'))
 
 # Init logging to discord.log
 logger = logging.getLogger('CatchView')
@@ -108,7 +108,7 @@ class CatchView(discord.ui.View):
                         pass
 
             # Attempt to catch
-            roll = random.randint(1, 100)
+            roll = round(random.uniform(1, 100), 1)
             current_rate = await _calculate_user_catch_rate(
                 attempts=self.attempts[user_id],
                 base=self.spawned_pokemon_catch_percent,
