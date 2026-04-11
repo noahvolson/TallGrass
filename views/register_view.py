@@ -47,6 +47,10 @@ class RegisterView(discord.ui.View):
             return
 
         self.stop()
+
+        # Invalidate count to re-calculate box penalty
+        database.invalidate_pokemon_count(interaction.user.id, interaction.guild_id)
+
         logger.info(
             f"{interaction.user} successfully registered for tournament '{self.tournament_code}' "
             f"with team: {[p['national_dex_number'] for p in self.team_pokemon_list]}"
