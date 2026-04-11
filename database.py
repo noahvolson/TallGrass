@@ -28,6 +28,48 @@ async def init_db():
         await db.commit()
 
 #
+# Schema changes made after the bot went live
+# TODO set up a more robust migration process
+#
+async def migrate():
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        cursor = await db.execute("PRAGMA user_version")
+        row = await cursor.fetchone()
+        version = row[0]
+
+        if version < 1:
+            # Support for tournaments
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS tournament (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    code TEXT NOT NULL UNIQUE,
+                    active BOOLEAN NOT NULL DEFAULT 1
+                );
+            """)
+            await db.execute("""
+                CREATE TABLE tournament_team (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tournament_id INTEGER NOT NULL REFERENCES tournament(id),
+                    user_id INTEGER NOT NULL,
+                    guild_id INTEGER NOT NULL,
+                    UNIQUE (tournament_id, user_id),
+                    FOREIGN KEY (user_id, guild_id) REFERENCES user(user_id, guild_id)
+                );
+            """)
+            await db.execute("""
+                ALTER TABLE user_pokemon ADD COLUMN tournament_team_id INTEGER REFERENCES tournament_team(id)
+            """)
+            await db.execute("PRAGMA user_version = 1")
+            await db.commit()
+
+        # if version < 2:
+        #     ... next migration
+        #     await db.execute("PRAGMA user_version = 2")
+        #     await db.commit()
+
+#
 # Catch rate depends on caught count. To avoid spamming the db I set up a cache
 #
 _pokemon_count_cache: dict[tuple[int, int], int] = {} # (user_id, guild_id) -> pokemon_count
@@ -95,12 +137,13 @@ async def get_user_pokemon_id(user_id: int, guild_id: int, national_dex_number: 
 async def user_has_pokemon(user_id: int, guild_id: int, national_dex_number: int, is_shiny: bool) -> bool:
     return await get_user_pokemon_id(user_id, guild_id, national_dex_number, is_shiny) is not None
 
-async def get_all_user_pokemon(user_id: int, guild_id: int):
+async def get_user_box(user_id: int, guild_id: int):
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         cursor = await db.execute("""
             SELECT id, national_dex_number, name, is_shiny
             FROM user_pokemon
-            WHERE user_id = ? AND guild_id = ?
+            WHERE user_id = ? AND guild_id = ? 
+            AND tournament_team_id IS NULL      -- Pokemon can only compete once
         """, (user_id, guild_id))
         rows = await cursor.fetchall()
         await cursor.close()
@@ -259,3 +302,108 @@ async def evolve(user_id, guild_id, pokemon_id, new_dex_number, new_name) -> boo
 
         await db.commit()
         return True
+
+async def create_tournament(guild_id: int, name: str, code: str):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO tournament (guild_id, name, code) VALUES (?, ?, ?)
+        """, (guild_id, name, code))
+        await db.commit()
+
+async def close_tournament(guild_id: int, code: str):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        await db.execute("""
+            UPDATE tournament
+            SET active = 0
+            WHERE guild_id = ? AND code = ?
+        """, (guild_id, code))
+        await db.commit()
+
+async def register_tournament_team(
+        user_id: int,
+        guild_id: int,
+        tournament_code: str,
+        team_pokemon_list: list[tuple[int, bool]]
+):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        async with db.execute("""
+            SELECT id FROM tournament
+            WHERE code = ? AND guild_id = ? AND active = 1
+        """, (tournament_code, guild_id)) as cursor:
+            row = await cursor.fetchone()
+
+        if not row:
+            return False
+
+        tournament_id = row[0]
+
+        try:
+            cursor = await db.execute("""
+                INSERT INTO tournament_team (tournament_id, user_id, guild_id)
+                VALUES (?, ?, ?)
+            """, (tournament_id, user_id, guild_id))
+            team_id = cursor.lastrowid
+
+            for dex_num, is_shiny in team_pokemon_list:
+                cursor = await db.execute("""
+                    UPDATE user_pokemon
+                    SET tournament_team_id = ?
+                    WHERE id = (
+                        SELECT id FROM user_pokemon
+                        WHERE user_id = ?
+                          AND guild_id = ?
+                          AND national_dex_number = ?
+                          AND is_shiny = ?
+                          AND tournament_team_id IS NULL
+                        LIMIT 1
+                    )
+                """, (team_id, user_id, guild_id, dex_num, is_shiny))
+
+                if cursor.rowcount == 0:
+                    await db.rollback()
+                    return False
+
+            await db.commit()
+
+        except aiosqlite.IntegrityError:
+            await db.rollback()
+            return False
+
+        return True
+
+async def get_active_tournament(code: str):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        cursor = await db.execute(
+            "SELECT * FROM tournament WHERE code = ? AND active = 1",
+            (code,)
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        return row[0] if row else None
+
+async def active_tournament_exists(code: str) -> bool:
+    return await get_active_tournament(code) is not None
+
+async def get_user_teams(user_id, guild_id):
+    async with aiosqlite.connect(BOT_DB_FILE) as db:
+        async with db.execute("""
+            SELECT t.code, up.national_dex_number, up.is_shiny
+            FROM tournament_team tt
+            JOIN tournament t ON t.id = tt.tournament_id
+            JOIN user_pokemon up ON up.tournament_team_id = tt.id
+            WHERE tt.user_id = ?
+              AND tt.guild_id = ?
+            ORDER BY t.code, up.id
+        """, (user_id, guild_id)) as cursor:
+            rows = await cursor.fetchall()
+
+    if not rows:
+        return {}
+
+    teams = {}
+    for code, dex_num, is_shiny in rows:
+        if code not in teams:
+            teams[code] = []
+        teams[code].append({'national_dex_number': dex_num, 'is_shiny': is_shiny, 'name': 'number'})
+
+    return teams

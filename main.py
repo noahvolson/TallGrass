@@ -20,6 +20,7 @@ from views.release_view import ReleaseView
 from views.trade_view import TradeView
 from views.multi_trade_view import MultiTradeView
 from views.evolution_view import EvolutionView
+from views.register_view import RegisterView
 
 # Init environment variables
 load_dotenv()
@@ -180,6 +181,19 @@ async def init(interaction: discord.Interaction):
 
     await interaction.response.send_message(f'Tallgrass initialized!')
 
+# Define bot commands
+@bot.tree.command(name='migrate', description='Update TallGrass database to support newer commands')
+@discord.app_commands.default_permissions(administrator=True)
+async def migrate(interaction: discord.Interaction):
+    try:
+        await database.migrate()
+    except Exception as e:
+        logger.error(f'Failed to migrate database: {e}')
+        await interaction.response.send_message('Failed to migrate database. Check log.')
+        return
+
+    await interaction.response.send_message(f'Migration complete!')
+
 @bot.tree.command(name='start', description='Start spawning Pokémon in this channel. Accepts an active window in military time')
 @discord.app_commands.default_permissions(administrator=True)
 async def start(interaction: discord.Interaction, start_active_hour: int | None = 0, end_active_hour: int | None = 24):
@@ -254,7 +268,7 @@ def build_candy_string(count: int) -> str:
 @bot.tree.command(name='box', description='View your pokemon collection')
 async def box(interaction: discord.Interaction, user: discord.Member = None):
     view_user = user if user else interaction.user
-    pokemon_list = await database.get_all_user_pokemon(view_user.id, interaction.guild_id)
+    pokemon_list = await database.get_user_box(view_user.id, interaction.guild_id)
     num_candies = await database.get_rare_candies(view_user.id, interaction.guild_id)
     wrapped_candies = build_candy_string(num_candies)
 
@@ -559,10 +573,116 @@ def build_export_box(pokemon_list: list):
 async def exportbox(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     view_user = interaction.user
-    pokemon_list = await database.get_all_user_pokemon(view_user.id, interaction.guild_id)
+    pokemon_list = await database.get_user_box(view_user.id, interaction.guild_id)
     export_text = '```\n' + build_export_box(pokemon_list) + '```'
     await interaction.followup.send(export_text, ephemeral=True)
     logger.debug(f'{interaction.user.id} used export_box')
+
+@bot.tree.command(name='tournamentstart', description='Create a new tournament')
+@discord.app_commands.default_permissions(administrator=True)
+async def tournamentstart(interaction: discord.Interaction, name: str, code: str):
+    try:
+        await database.create_tournament(interaction.guild_id, name, code)
+    except Exception as e:
+        logger.error(f'Failed to create tournament: {e}')
+        await interaction.response.send_message('Failed to create tournament. Check log.')
+        return
+
+    role = discord.utils.get(interaction.channel.guild.roles, name=notification_role_name)
+    await interaction.response.send_message(f'<@&{role.id}> **{name}** is live! Register a team with code: `{code}`!')
+
+@bot.tree.command(name='tournamentclose', description='Close a tournament')
+@discord.app_commands.default_permissions(administrator=True)
+async def tournamentclose(interaction: discord.Interaction, code: str):
+    try:
+        await database.close_tournament(interaction.guild_id, code)
+    except Exception as e:
+        logger.error(f'Failed to close tournament: {e}')
+        await interaction.response.send_message('Failed to close tournament. Check log.')
+        return
+
+    role = discord.utils.get(interaction.channel.guild.roles, name=notification_role_name)
+    await interaction.response.send_message(f'<@&{role.id}> Team registration for `{code}` is now closed!')
+
+@bot.tree.command(name='register', description='Register 6 Pokémon for an open tournament')
+async def register(interaction: discord.Interaction, tournament_code: str, team_csv_list: str):
+    await interaction.response.defer(ephemeral=True)
+
+    team_raw = [s.strip() for s in team_csv_list.split(',')]
+
+    try:
+        team_parsed = [parse_pokemon(s) for s in team_raw]  # list of (dex_num, is_shiny)
+    except ValueError:
+        await interaction.followup.send(
+            f'Example usage: `/register tournament_code:{tournament_code} team_csv_list:shiny_pikachu_25,pikachu_25,pikachu_25,pikachu_25,pikachu_25,pikachu_25`',
+            ephemeral=True
+        )
+        return
+
+    if len(team_parsed) != 6:
+        await interaction.followup.send('You must register exactly 6 Pokemon', ephemeral=True)
+        return
+
+    valid_tournament = await database.active_tournament_exists(tournament_code)
+    if not valid_tournament:
+        await interaction.followup.send(f'No active tournament exists with code: `{tournament_code}`', ephemeral=True)
+        return
+
+    # Verify the user can register these Pokémon
+    for raw, (dex_num, is_shiny) in zip(team_raw, team_parsed):
+        owns = await database.user_has_pokemon(interaction.user.id, interaction.guild_id, dex_num, is_shiny)
+        if not owns:
+            await interaction.followup.send(f'You do not own {raw}', ephemeral=True)
+            return
+
+    # Resolve names for gallery display
+    def resolve_pokemon_list(parsed_list):
+        result = []
+        for dex, shiny in parsed_list:
+            result.append({'national_dex_number': dex, 'is_shiny': shiny, 'name': 'number'}) # Note this is a placeholder name for the emoji
+        return result
+
+    team_pokemon_list = resolve_pokemon_list(team_parsed)
+    team_gallery = build_pokemon_gallery(team_pokemon_list, num_columns=6)
+
+    view = RegisterView(
+        log_handler=handler,
+        user_id=interaction.user.id,
+        tournament_code=tournament_code,
+        team_pokemon_list=team_pokemon_list,
+        team_gallery=team_gallery,
+    )
+    embed = discord.Embed(
+        title=f"Please confirm your team for `{tournament_code}`",
+        description=team_gallery + '\n**Registered Pokémon will be removed from your box permanently!**',
+        color=discord.Color.blurple())
+
+    message = await interaction.followup.send(
+        embed=embed,
+        view=view,
+        ephemeral=True
+    )
+
+    view.message = message
+
+@bot.tree.command(name='teams', description='View registered teams')
+async def teams(interaction: discord.Interaction, user: discord.Member = None):
+    view_user = user if user else interaction.user
+
+    user_teams = await database.get_user_teams(interaction.user.id, interaction.guild_id)
+
+    lines = [f'**{code}**\n{build_pokemon_gallery(pokemon_list, num_columns=6)}' for code, pokemon_list in user_teams.items()]
+    description = '\n'.join(lines)
+
+    embed = discord.Embed(
+        title=f"{view_user.name.capitalize()}'s Teams",
+        description=description,
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=view_user.display_avatar.url)
+
+    await interaction.response.send_message(embed=embed)
+
 
 # Now we're ready to spin up the bot!
 bot.run(token, log_handler=handler, log_level=log_level)
