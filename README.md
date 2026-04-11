@@ -19,6 +19,10 @@ A Discord bot to spawn collectible Pokemon on your server
 
 `/exportbox` Export your Pokémon collection in a standard text format
 
+`/register` Register 6 Pokémon for an open tournament
+
+`/teams` View registered teams
+
 `/init` [ADMIN ONLY] Set up the database for TallGrass
 
 `/start` [ADMIN ONLY] Start spawning Pokémon in this channel. Optionally accepts an active window in military time
@@ -26,6 +30,10 @@ A Discord bot to spawn collectible Pokemon on your server
 `/stop` [ADMIN ONLY] Stop spawning Pokémon in this channel
 
 `/rarecandy` [ADMIN ONLY] Distributes Rare Candy to all users with at least one Pokémon or a single user by passing the `user` param
+
+`/tournamentstart` [ADMIN ONLY] Create a new tournament and open team registrations
+
+`/tournamentclose` [ADMIN ONLY] Close team registrations for a tournament
 
 ## Setup
 

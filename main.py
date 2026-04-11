@@ -578,7 +578,7 @@ async def exportbox(interaction: discord.Interaction):
     await interaction.followup.send(export_text, ephemeral=True)
     logger.debug(f'{interaction.user.id} used export_box')
 
-@bot.tree.command(name='tournamentstart', description='Create a new tournament')
+@bot.tree.command(name='tournamentstart', description='Create a new tournament and open team registrations')
 @discord.app_commands.default_permissions(administrator=True)
 async def tournamentstart(interaction: discord.Interaction, name: str, code: str):
     try:
