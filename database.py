@@ -81,7 +81,7 @@ async def get_pokemon_count(user_id: int, guild_id: int) -> int:
         # Cache miss — query DB once and populate
         async with aiosqlite.connect(BOT_DB_FILE) as db:
             async with db.execute("""
-                SELECT COUNT(*) FROM user_pokemon WHERE user_id = ? AND guild_id = ?
+                SELECT COUNT(*) FROM user_pokemon WHERE user_id = ? AND guild_id = ? AND tournament_team_id IS NULL
                 """, (user_id, guild_id)
             ) as cursor:
                 row = await cursor.fetchone()
