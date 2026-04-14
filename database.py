@@ -384,10 +384,10 @@ async def get_active_tournament(code: str):
 async def active_tournament_exists(code: str) -> bool:
     return await get_active_tournament(code) is not None
 
-async def get_user_teams(user_id, guild_id):
+async def get_user_teams(user_id: int, guild_id: int):
     async with aiosqlite.connect(BOT_DB_FILE) as db:
         async with db.execute("""
-            SELECT t.name, up.national_dex_number, up.is_shiny
+            SELECT t.name, up.national_dex_number, up.is_shiny, up.name AS pokemon_name
             FROM tournament_team tt
             JOIN tournament t ON t.id = tt.tournament_id
             JOIN user_pokemon up ON up.tournament_team_id = tt.id
@@ -401,9 +401,9 @@ async def get_user_teams(user_id, guild_id):
         return {}
 
     teams = {}
-    for name, dex_num, is_shiny in rows:
+    for name, dex_num, is_shiny, pokemon_name in rows:
         if name not in teams:
             teams[name] = []
-        teams[name].append({'national_dex_number': dex_num, 'is_shiny': is_shiny, 'name': 'number'})
+        teams[name].append({'national_dex_number': dex_num, 'is_shiny': is_shiny, 'name': pokemon_name})
 
     return teams
