@@ -669,9 +669,9 @@ async def register(interaction: discord.Interaction, tournament_code: str, team_
 async def teams(interaction: discord.Interaction, user: discord.Member = None):
     view_user = user if user else interaction.user
 
-    user_teams = await database.get_user_teams(interaction.user.id, interaction.guild_id)
+    user_teams = await database.get_user_teams(view_user, interaction.guild_id)
 
-    lines = [f'**{code}**\n{build_pokemon_gallery(pokemon_list, num_columns=6)}' for code, pokemon_list in user_teams.items()]
+    lines = [f'**{name}**\n{build_pokemon_gallery(pokemon_list, num_columns=6)}' for name, pokemon_list in user_teams.items()]
     description = '\n'.join(lines)
 
     embed = discord.Embed(
