@@ -293,11 +293,14 @@ async def evolve(user_id, guild_id, pokemon_id, new_dex_number, new_name) -> boo
             return False  # not enough candies
 
         cursor = await db.execute("""
-            UPDATE user_pokemon SET national_dex_number = ?, name = ? AND tournament_team_id IS NULL
+            UPDATE user_pokemon SET national_dex_number = ?, name = ?
             WHERE id = ?
-        """, (new_dex_number, new_name, pokemon_id))
+            AND user_id = ? 
+            AND guild_id = ?
+            AND tournament_team_id IS NULL
+        """, (new_dex_number, new_name, pokemon_id, user_id, guild_id))
         if cursor.rowcount == 0:
-            # Don't commit — both updates are rolled back automatically
+            # Skip commit so both updates are rolled back
             return False
 
         await db.commit()
