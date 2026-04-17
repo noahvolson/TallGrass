@@ -565,7 +565,7 @@ def build_export_box(pokemon_list: list):
     for p in pokemon_list:
         result.append(p['name'])
         result.append("Shiny: Yes" if p['is_shiny'] else "Shiny: No")
-        result.append("Level: 50")
+        result.append("Level: 100")
         result.append("")
     return "\n".join(result)
 
