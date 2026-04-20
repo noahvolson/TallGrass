@@ -477,7 +477,7 @@ async def evolve(interaction: discord.Interaction, pokemon: str):
         color=discord.Color.purple()
     )
 
-    # Branching evolution — ask the user to pick
+    # Ask for confirmation, selection for branching evos
     view = EvolutionView(
         user=interaction.user,
         original_pokemon_name=official_name,
