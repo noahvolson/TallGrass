@@ -14,7 +14,8 @@ async def init_db():
                 guild_id INTEGER NOT NULL,
                 national_dex_number INTEGER NOT NULL,
                 name TEXT NOT NULL,
-                is_shiny BOOLEAN NOT NULL
+                is_shiny BOOLEAN NOT NULL,
+                FOREIGN KEY (user_id, guild_id) REFERENCES user(user_id, guild_id)
             );
         """)
         await db.execute("""
